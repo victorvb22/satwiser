@@ -451,7 +451,11 @@ def main() -> None:
         "flatten: the per-bin "
         "mean no longer averages out the short-period terms that the first-order J2 "
         "correction leaves in the semi-major axis, so the floor does not depend on the "
-        "injected noise. A higher-order short-period model would lower it.",
+        "injected noise. Classical higher-order zonal models would not remove it: "
+        "`scripts/check_short_period_floor.py` shows that this residual is itself a "
+        "ground-track signature (see `short_period_floor.json` for the out-of-sample "
+        "reduction obtained with a sample-level template). It is not used for the presets: "
+        "it is prior knowledge from precise orbits that a TLE-only user would not have.",
         "- Correlated errors (large rho) hurt most at dense sampling, where averaging "
         "many samples no longer reduces the noise.",
         "",

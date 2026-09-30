@@ -138,7 +138,7 @@ Empty values: 90 % is not reached within the tested range (up to 1 m/s).
 
 ## Reading the curves
 
-- At 144 samples per day and below (one every ten minutes or fewer) the curves flatten: the per-bin mean no longer averages out the short-period terms that the first-order J2 correction leaves in the semi-major axis, so the floor does not depend on the injected noise. A higher-order short-period model would lower it.
+- At 144 samples per day and below (one every ten minutes or fewer) the curves flatten: the per-bin mean no longer averages out the short-period terms that the first-order J2 correction leaves in the semi-major axis, so the floor does not depend on the injected noise. Classical higher-order zonal models would not remove it: `scripts/check_short_period_floor.py` shows that this residual is itself a ground-track signature. A template indexed by position in the 175-revolution cycle and argument of latitude, fitted on quiet windows before 2020, cuts it from 43.4 m to 3.1 m RMS on windows from 2020 onwards (`short_period_floor.json`). It is not used for the presets: it is prior knowledge from precise orbits that a TLE-only user would not have, so it would make the degraded curves optimistic.
 - Correlated errors (large rho) hurt most at dense sampling, where averaging many samples no longer reduces the noise.
 
 ## Figures

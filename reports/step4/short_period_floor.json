@@ -1,0 +1,7 @@
+{
+  "train_windows": 23,
+  "test_windows": 17,
+  "coverage": 1.0,
+  "rms_before_m": 43.40682148888343,
+  "rms_after_m": 3.056845835428866
+}
