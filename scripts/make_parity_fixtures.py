@@ -31,6 +31,10 @@ CASES = [
     {"name": "correlated_sparse", "sigma_m": 30.0, "points_per_day": 24, "rho": 0.9,
      "dv_add": 0.5},
     {"name": "tle_like", "sigma_m": 1000.0, "points_per_day": 2, "rho": 0.9, "dv_add": 0.0},
+    # Window-wide median/MAD normalisation (the alternative scale of the lab detector).
+    {"name": "window_normalisation", "sigma_m": 1.0, "points_per_day": 1440, "rho": 0.5,
+     "dv_add": 0.002, "detector": {"window_revs": 12, "threshold": 4.0,
+                                   "normalisation": "window", "floor_m": 0.0}},
 ]
 
 
@@ -54,6 +58,7 @@ def main() -> None:
     rng = np.random.default_rng(SEED)
     cases = []
     for case in CASES:
+        det_case = lab.LabDetector(**case["detector"]) if "detector" in case else det
         deg = lab.Degradation(case["sigma_m"], case["points_per_day"], case["rho"])
         idx = lab.subsample(len(t), deg.points_per_day, phase=3, step_s=window["step_s"])
         z = rng.standard_normal((len(idx), 6))
@@ -63,14 +68,14 @@ def main() -> None:
         b = lab.bin_revolutions(deg.points_per_day)
         means = lab.bin_means(a, orbit[idx], template, b,
                               lab.expected_per_bin(deg.points_per_day, b))[1]
-        w = lab.detector_window(det, b)
-        d, zs = lab.window_scores(means, w, det.normalisation, det.floor_m)
+        w = lab.detector_window(det_case, b)
+        d, zs = lab.window_scores(means, w, det_case.normalisation, det_case.floor_m)
         cases.append({**case, "phase": 3, "idx": idx.tolist(), "normals": z.ravel().tolist(),
                       "a_nosp": a.tolist(), "revs_per_bin": b, "window": w,
                       "means": [None if np.isnan(v) else v for v in means],
                       "d": [None if np.isnan(v) else v for v in d],
                       "z": [None if np.isnan(v) else v for v in zs],
-                      "detections": lab.window_detect(zs, det.threshold, w)})
+                      "detections": lab.window_detect(zs, det_case.threshold, w)})
     fixture = {
         "source_event": window["event_id"], "step_s": window["step_s"],
         "event_s": event_s, "t_offset_s": t.tolist(), "orbit": orbit.tolist(),

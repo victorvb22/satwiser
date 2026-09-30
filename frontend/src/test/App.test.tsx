@@ -1,6 +1,6 @@
 /** Render test of the two main screens against a mocked API and an in-thread worker. */
 import { QueryClient } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createMemoryRouter } from "react-router-dom";
 
 import App, { routes } from "../App";
@@ -17,6 +17,17 @@ const detected = {
   id: "S1A-D100", kind: "detected", time: "2025-03-01T03:00:00Z", orbit: 100,
   class: "station_keeping", dv_est_mm_s: 5.2, dv_esa_mm_s: 5.0, da_m: 9.8, lab_available: true,
 };
+
+const falseAlarm = {
+  id: "S1A-F200", kind: "false_alarm", time: "2025-03-01T03:00:00Z", orbit: 100,
+  class: "unexplained", dv_est_mm_s: 5.1, dv_esa_mm_s: null, da_m: 9.6, lab_available: true,
+};
+
+const labWindow = (id: string, manoeuvres: unknown[]) => ({
+  event_id: id, satellite: "S1A", start, step_s: fixture.step_s, event_time: eventIso,
+  t_offset_s: fixture.t_offset_s, orbit: fixture.orbit, states: fixture.states,
+  template_a: fixture.template_a, detector: fixture.detector, esa_manoeuvres: manoeuvres,
+});
 
 const payloads: Record<string, unknown> = {
   "/api/satellites": [{
@@ -39,7 +50,7 @@ const payloads: Record<string, unknown> = {
       class: "orbit_change", dv_est_mm_s: null, dv_esa_mm_s: 1.0, da_m: null,
       lab_available: false },
   ],
-  "/api/satellites/S1A/events": [detected],
+  "/api/satellites/S1A/events": [detected, falseAlarm],
   "/api/events/S1A-D100": {
     ...detected, satellite: "S1A", esa_type: "station_keeping", esa_da_m: 9.4, di_mdeg: 0.01,
     de_1e6: 0.1, statistic: 8, channel: "a", alarm_delay_revs: 1, split: "test",
@@ -54,11 +65,13 @@ const payloads: Record<string, unknown> = {
                tle: { label: "Type TLE", sigma_m: 1000, points_per_day: 2, rho: 0.9 } },
     detector: fixture.detector, trials_per_cell: 60, window_days: 10,
   },
-  "/api/lab/S1A-D100": {
-    event_id: "S1A-D100", satellite: "S1A", start, step_s: fixture.step_s, event_time: eventIso,
-    t_offset_s: fixture.t_offset_s, orbit: fixture.orbit, states: fixture.states,
-    template_a: fixture.template_a, detector: fixture.detector,
-    esa_manoeuvres: [{ start: eventIso, dv_t_mm_s: 5.0, type: "station_keeping" }],
+  "/api/lab/S1A-D100": labWindow("S1A-D100",
+                                  [{ start: eventIso, dv_t_mm_s: 5.0, type: "station_keeping" }]),
+  // Same real states (they contain a step) but no logged manoeuvre: a false alarm.
+  "/api/lab/S1A-F200": labWindow("S1A-F200", []),
+  "/api/events/S1A-F200": {
+    ...falseAlarm, satellite: "S1A", esa_type: null, esa_da_m: null, di_mdeg: 0.0, de_1e6: 0.0,
+    statistic: 7, channel: "a", alarm_delay_revs: 1, split: "test",
   },
 };
 
@@ -69,7 +82,7 @@ class InThreadWorker {
   postMessage(msg: WorkerRequest) {
     setTimeout(() => {
       if (msg.type === "load") {
-        this.prepared = prepare(msg.window, msg.realDvMmS);
+        this.prepared = prepare(msg.window, msg.realDvMmS, msg.config);
         this.onmessage?.({ data: { type: "loaded", realDvMmS: this.prepared.realDvMmS } } as MessageEvent);
       } else if (this.prepared) {
         const result = runLab(this.prepared, msg.params);
@@ -126,5 +139,23 @@ describe("Lab screen", () => {
     expect(screen.getByRole("table", { name: /Probabilité de détection/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "POD Copernicus" }))
       .toHaveAttribute("aria-pressed", "true");
+  });
+});
+
+describe("Lab screen, other cases", () => {
+  it("opens a false alarm with no manoeuvre and reports the alarm", async () => {
+    renderAt("/labo/S1A-F200");
+    expect(await screen.findByText("Fausse alarme", {}, { timeout: 5000 })).toBeInTheDocument();
+    expect(screen.getByLabelText("Taille de la manœuvre")).toHaveValue("0");
+    expect(screen.queryByText("Manœuvre détectée")).not.toBeInTheDocument();
+  });
+
+  it("resets the manoeuvre size when switching to another event", async () => {
+    renderAt("/labo/S1A-F200");
+    expect(await screen.findByText("Fausse alarme", {}, { timeout: 5000 })).toBeInTheDocument();
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "S1A-D100" } });
+    expect(await screen.findByText("Manœuvre détectée", {}, { timeout: 5000 })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(document.querySelector("output[for=dv]")?.textContent).toBe("5,0 mm/s"));
   });
 });

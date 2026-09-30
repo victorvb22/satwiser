@@ -18,8 +18,9 @@ WEATHER = ("f107_obs", "f107_81d", "ap")
 def to_grid(revs: pd.DataFrame) -> pd.DataFrame:
     """Reindex a revolution table on consecutive orbit numbers.
 
-    Space-weather columns are forward/back filled over missing revolutions (they are
-    daily values); orbital elements are left NaN. ``valid`` marks observed revolutions.
+    Space-weather columns are forward filled over missing revolutions (they are daily
+    values; a back fill only covers the first rows if they lack indices); orbital elements
+    are left NaN. ``valid`` marks observed revolutions.
     """
     unique = revs.drop_duplicates("orbit")
     r = unique.set_index("orbit")
@@ -46,7 +47,7 @@ def quiet_mask(grid: pd.DataFrame, mans: pd.DataFrame, before: int = 1, after: i
 
     Uses the ESA record: only for fitting nuisance models on the calibration period.
     """
-    clock = OrbitClock(grid[grid["valid"]].reset_index().rename(columns={"index": "orbit"}))
+    clock = OrbitClock(grid[grid["valid"]].reset_index())
     o0 = clock.orbit_at(mans["start"])
     o1 = clock.orbit_at(mans["stop"])
     orbits = grid.index.to_numpy()

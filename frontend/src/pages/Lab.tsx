@@ -12,7 +12,7 @@ import {
   type Robustness,
 } from "../api/client";
 import { ErrorNote, Loading } from "../components/Layout";
-import type { LabParams, LabResult } from "../lab/runLab";
+import type { LabConfig, LabParams, LabResult } from "../lab/runLab";
 import { useLab } from "../lab/useLab";
 import { CLASS_LABEL, dateFr, dv, KIND_LABEL, length, num, pct } from "../lib/format";
 import { minDetectable, nearestIndex, probabilityTable } from "../lib/grid";
@@ -24,10 +24,16 @@ const BROWSER_MAX_POINTS = 1440; // lab windows are shipped at 60 s
 // Slider mappings (0-100 positions, logarithmic where the brief asks for it).
 const sigmaOf = (v: number) => 0.01 * 10 ** (v / 20); // 1 cm .. 1 km
 const sigmaPos = (s: number) => 20 * Math.log10(s / 0.01);
-const pointsOf = (v: number) => Math.max(1, Math.round(10 ** ((v / 100) * Math.log10(BROWSER_MAX_POINTS))));
+/** Effective cadence: the window is on a 60 s grid, so only 1440 / stride is reachable. */
+const pointsOf = (v: number) => {
+  const wanted = Math.max(1, Math.round(10 ** ((v / 100) * Math.log10(BROWSER_MAX_POINTS))));
+  return BROWSER_MAX_POINTS / Math.max(1, Math.round(BROWSER_MAX_POINTS / wanted));
+};
 const pointsPos = (p: number) => (100 * Math.log10(p)) / Math.log10(BROWSER_MAX_POINTS);
-const dvOf = (v: number) => 0.2 * 10 ** ((v / 100) * Math.log10(5000)); // 0.2 mm/s .. 1 m/s
-const dvPos = (mm: number) => (100 * Math.log10(Math.max(mm, 0.2) / 0.2)) / Math.log10(5000);
+/** Position 0 removes the manoeuvre; (0, 100] spans 0.2 mm/s .. 1 m/s logarithmically. */
+const dvOf = (v: number) => (v <= 0 ? 0 : 0.2 * 10 ** ((v / 100) * Math.log10(5000)));
+const dvPos = (mm: number) =>
+  mm <= 0 ? 0 : Math.max(0.5, (100 * Math.log10(Math.max(mm, 0.2) / 0.2)) / Math.log10(5000));
 
 const VERDICTS: Record<LabResult["verdict"], [string, string]> = {
   detected: ["Manœuvre détectée", "var(--event)"],
@@ -179,11 +185,16 @@ function LabView({ eventId, grid }: { eventId: string; grid: Robustness }) {
   const [seed, setSeed] = useState(1);
 
   const realDv = event.data ? (event.data.dv_esa_mm_s ?? (event.data.kind === "false_alarm" ? 0 : null)) : null;
-  useEffect(() => setDvV(null), [eventId]);
-  const lab = useLab(windowQuery.data, realDv, useMemo<LabParams>(() => ({
+  const config = useMemo<LabConfig>(() => ({
+    detector: { windowRevs: grid.detector.window_revs, threshold: grid.detector.threshold,
+                normalisation: grid.detector.normalisation, floorM: grid.detector.floor_m },
+    template: grid.template_a,
+  }), [grid]);
+  // Load the window only once the event is known, so the real Δv is never a guess.
+  const lab = useLab(event.data ? windowQuery.data : undefined, realDv, useMemo<LabParams>(() => ({
     sigmaM: sigmaOf(sigmaV), pointsPerDay: pointsOf(pointsV), rho: rhoV / 20,
     dvMmS: dvV === null ? 0 : dvSign * dvOf(dvV), seed,
-  }), [sigmaV, pointsV, rhoV, dvV, dvSign, seed]));
+  }), [sigmaV, pointsV, rhoV, dvV, dvSign, seed]), config);
   useEffect(() => {
     if (dvV === null && lab.realDv !== null) {
       setDvSign(lab.realDv < 0 ? -1 : 1);
@@ -196,7 +207,7 @@ function LabView({ eventId, grid }: { eventId: string; grid: Robustness }) {
   const rho = rhoV / 20;
   const dvMm = dvV === null ? 0 : dvOf(dvV);
   const signedDv = (mm: number | null) =>
-    mm === null ? "—" : `${mm < 0 ? "−" : ""}${dv(Math.abs(mm))}`;
+    mm === null ? "—" : mm === 0 ? "aucune" : `${mm < 0 ? "−" : ""}${dv(Math.abs(mm))}`;
   const minDv = minDetectable(grid, sigma, points, rho);
   const choose = (key: string) => {
     const p = grid.presets[key];
@@ -243,7 +254,7 @@ function LabView({ eventId, grid }: { eventId: string; grid: Robustness }) {
                   display={num(rho, 2)} lo="0" hi="0,95" onChange={touch(setRhoV)} />
           <Slider id="dv" label="Taille de la manœuvre" value={dvV ?? 0}
                   display={signedDv(dvSign * dvMm)}
-                  lo="0,2 mm/s" hi="1 m/s" onChange={(v) => setDvV(v)} />
+                  lo="0 · 0,2 mm/s" hi="1 m/s" onChange={(v) => setDvV(v)} />
           <div className="card" style={{ padding: 20, gap: 12 }}>
             <div className="verdict">
               <span className="dot" style={{ background: verdictColour, boxShadow: `0 0 12px ${verdictColour}` }} />
@@ -313,5 +324,7 @@ export default function Lab() {
   const grid = useRobustness();
   if (sats.isError || grid.isError) return <ErrorNote>API injoignable. Réessayez dans un instant.</ErrorNote>;
   if (!sats.data || !grid.data) return <Loading what="du labo" />;
-  return <LabView eventId={eventId ?? sats.data[0].default_lab_event} grid={grid.data} />;
+  const id = eventId ?? sats.data[0].default_lab_event;
+  // Keyed by event: switching events resets every slider and worker state.
+  return <LabView key={id} eventId={id} grid={grid.data} />;
 }

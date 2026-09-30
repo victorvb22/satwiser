@@ -7,6 +7,10 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
+#: First day of the test period. Everything fitted or tuned (templates, drag model,
+#: detector settings, classifiers) uses data strictly before this date.
+CALIBRATION_END = "2020-01-01"
+
 
 def data_dir() -> Path:
     """Root folder for raw downloads and intermediate products.

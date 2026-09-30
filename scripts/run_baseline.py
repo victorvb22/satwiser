@@ -12,28 +12,21 @@ from __future__ import annotations
 import argparse
 import json
 
-import matplotlib
+import numpy as np
+import pandas as pd
 
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402
-import numpy as np  # noqa: E402
-import pandas as pd  # noqa: E402
-
-from satwiser.config import REPO_ROOT, processed_dir, raw_dir  # noqa: E402
-from satwiser.detection.baseline import BaselineConfig, detect, scores  # noqa: E402
-from satwiser.evaluation import da_bin, evaluate, recall_by, summary  # noqa: E402
-from satwiser.io.esa_history import read_manoeuvres  # noqa: E402
-from satwiser.labels import MAX_GAP_H, manoeuvres  # noqa: E402
+from satwiser.config import CALIBRATION_END, REPO_ROOT, processed_dir, raw_dir
+from satwiser.detection.baseline import BaselineConfig, detect, scores
+from satwiser.evaluation import da_bin, evaluate, recall_by, summary
+from satwiser.io.esa_history import read_manoeuvres
+from satwiser.labels import MAX_GAP_H, manoeuvres
+from satwiser.plotting import DATA, EVENT, FAINT, figure, legend, save
+from satwiser.reporting import fmt
 
 OUT = REPO_ROOT / "reports" / "step2"
-CALIBRATION = ("2014-04-01", "2020-01-01")
-TEST = ("2020-01-01", "2027-01-01")
+CALIBRATION = ("2014-04-01", CALIBRATION_END)
 WINDOWS = (2, 4, 6, 8, 12, 16)
 THRESHOLDS = (2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 7.0, 8.0)
-
-BG, DATA, EVENT, FAINT, MUTED, TEXT = "#06080E", "#9CC2FF", "#F4A259", "#5E6782", "#8C95AB", \
-    "#E8ECF4"
-
 
 def run(revs: pd.DataFrame, mans: pd.DataFrame, cfg: BaselineConfig, period: tuple[str, str]
         ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]:
@@ -54,25 +47,10 @@ def calibrate(revs: pd.DataFrame, mans: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def style(ax):
-    ax.set_facecolor(BG)
-    for side in ("top", "right"):
-        ax.spines[side].set_visible(False)
-    for side in ("left", "bottom"):
-        ax.spines[side].set_color("#1E2436")
-    ax.tick_params(colors=FAINT, labelsize=8)
-    ax.yaxis.label.set_color(MUTED)
-    ax.xaxis.label.set_color(MUTED)
-    ax.title.set_color(TEXT)
-    ax.grid(color="#161B2A", lw=0.6)
-
-
 def year_figure(revs, m, d, year: int, path):
     r = revs[revs.index.year == year]
-    fig, (ax, axf) = plt.subplots(2, 1, figsize=(12, 4.6), height_ratios=(4, 1), sharex=True)
-    fig.patch.set_facecolor(BG)
-    for a_ in (ax, axf):
-        style(a_)
+    fig, axes = figure(2, 1, width=12, height=2.3, height_ratios=(4, 1), sharex=True)
+    ax, axf = axes[0, 0], axes[1, 0]
     ax.plot(r.index, (r["a"] - 7.07e6), color=DATA, lw=0.6)
     y = r["a"].reindex(r.index)
     t_of = pd.Series(revs.index, index=revs["orbit"])
@@ -92,34 +70,23 @@ def year_figure(revs, m, d, year: int, path):
     ax.set_ylabel("mean a − 7070 km [m]")
     ax.set_title(f"Sentinel-1A {year}: per-revolution mean semi-major axis and baseline "
                  "detections", fontsize=10, loc="left")
-    leg = ax.legend(frameon=False, fontsize=8, loc="upper right")
-    for text in leg.get_texts():
-        text.set_color(MUTED)
+    legend(ax, loc="upper right")
     axf.fill_between(r.index, r["f107_obs"], color=DATA, alpha=0.25, lw=0)
     axf.set_ylabel("F10.7")
-    fig.tight_layout()
-    fig.savefig(path, dpi=130, facecolor=BG)
-    plt.close(fig)
+    save(fig, path)
 
 
 def recall_figure(m_test, path):
     tab = recall_by(m_test.assign(bin=da_bin(m_test)), "bin")
-    fig, ax = plt.subplots(figsize=(7, 3.2))
-    fig.patch.set_facecolor(BG)
-    style(ax)
+    fig, axes = figure(1, 1, width=7, height=3.2)
+    ax = axes[0, 0]
     ax.bar(range(len(tab)), tab["recall"], color=EVENT, width=0.6)
     ax.set_xticks(range(len(tab)), [f"{b}\n(n={n})" for b, n in zip(tab.index, tab["n"],
                                                                      strict=True)])
     ax.set_ylim(0, 1)
     ax.set_ylabel("recall")
     ax.set_title("Test-period recall by expected |Δa| (ESA record)", fontsize=10, loc="left")
-    fig.tight_layout()
-    fig.savefig(path, dpi=130, facecolor=BG)
-    plt.close(fig)
-
-
-def fmt(x, digits=3):
-    return "—" if x is None or (isinstance(x, float) and np.isnan(x)) else f"{x:.{digits}f}"
+    save(fig, path)
 
 
 def main() -> None:
@@ -138,6 +105,9 @@ def main() -> None:
     gap_hist = {f"{lo:g}-{hi:g}" if np.isfinite(hi) else f">{lo:g}": int(n)
                 for lo, hi, n in zip(edges[:-1], edges[1:], counts, strict=True)}
     mans.to_parquet(processed_dir() / f"manoeuvres_{sat}.parquet")
+    # The test period ends with the ESA record: later detections cannot be scored.
+    coverage_end = mans["stop"].max() + pd.Timedelta(hours=12)
+    test = (CALIBRATION_END, str(coverage_end))
 
     grid = calibrate(revs, mans)
     grid.to_csv(OUT / "calibration_grid.csv", index=False)
@@ -147,7 +117,7 @@ def main() -> None:
     ref = grid[(grid["window"] == 2) & (grid["threshold"] == 5.0)].iloc[0]
 
     sc, m_cal, d_cal, s_cal = run(revs, mans, cfg, CALIBRATION)
-    _, m_test, d_test, s_test = run(revs, mans, cfg, TEST)
+    _, m_test, d_test, s_test = run(revs, mans, cfg, test)
     s_test_inplane = summary(m_test[m_test["type"] != "inclination"], d_test)
     det_all = detect(sc, cfg)
     det_all.to_parquet(processed_dir() / f"detections_baseline_{sat}.parquet")
@@ -222,6 +192,8 @@ def main() -> None:
         "",
         "## Calibration (" + " to ".join(CALIBRATION) + ", exclusive end)",
         "",
+        "- This period includes the orbit-acquisition phase (before 2014-08-01); step 3 "
+        "excludes it, so its calibration scores of this baseline differ slightly.",
         f"- Grid: window W in {list(WINDOWS)} revolutions, threshold in {list(THRESHOLDS)}. "
         f"Selected by F1: **W = {cfg.window}, threshold = {cfg.threshold:g}**.",
         f"- Reference (W = 2, z = 5, closest to single-revolution jumps): recall "
@@ -229,7 +201,7 @@ def main() -> None:
         f"- Selected configuration on calibration: recall {fmt(s_cal['recall'])}, precision "
         f"{fmt(s_cal['precision'])}, F1 {fmt(s_cal['f1'])}.",
         "",
-        "## Test (" + " to ".join((TEST[0], f"{revs.index[-1]:%Y-%m-%d}")) + ")",
+        f"## Test ({test[0]} to {coverage_end:%Y-%m-%d}, end of the ESA record)",
         "",
         f"- Manoeuvres: {s_test['manoeuvres']} ({s_test['observable']} observable). "
         f"TP {s_test['tp']}, FN {s_test['fn']}, false alarms {s_test['fp']} "
@@ -242,9 +214,11 @@ def main() -> None:
         f"- Δv estimate (Δv = Δa v / 2a) on detected station-keeping manoeuvres: median "
         f"absolute error {fmt(s_test['dv_abs_err_median_mm_s'], 2)} mm/s, median relative "
         f"error {fmt(s_test['dv_rel_err_median'] * 100, 0)} %.",
-        f"- Detection delay (causal reading, alarm available once W revolutions follow the "
-        f"manoeuvre): median {fmt(s_test['delay_median_h'], 1)} h "
-        f"(one revolution = {per * 60:.1f} min).",
+        f"- Detection delay (orbit time from the manoeuvre start to the end of the W "
+        f"revolutions the alarm needs): median {fmt(s_test['delay_median_h'], 1)} h "
+        f"(one revolution = {per * 60:.1f} min). Indicative only: the rolling normalisation "
+        "is centred (about 15 days on each side), so this detector is not causal, and the "
+        "delay excludes the publication latency of the precise orbits (about three weeks).",
         "",
         "### Recall by manoeuvre type (test)",
         "",

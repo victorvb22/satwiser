@@ -78,6 +78,8 @@ export interface Robustness {
               floor_m: number };
   trials_per_cell: number;
   window_days: number;
+  /** Ground-track template of the mean semi-major axis (175 values), for the lab. */
+  template_a?: number[];
 }
 
 export interface LabWindow {
@@ -100,13 +102,17 @@ export interface Metrics {
   test: Record<string, number>;
   comparison: Record<string, number | string>[];
   noise_m: { raw: number; template: number };
+  noise_scope?: string;
+  observe_window?: number;
   model: {
     operational_start: string;
     split: string;
+    coverage_end?: string;
     repeat_revolutions: number;
     template_ptp_a_m: number;
     template_ptp_i_mdeg: number;
     drag_beta: number[];
+    drag_2024_ratio?: { power_law: number; exponential: number } | null;
     sigma: { a: number; i: number };
   };
   revolutions: number;

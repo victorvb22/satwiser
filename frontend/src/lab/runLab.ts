@@ -12,6 +12,7 @@ import {
   meanANosp,
   MU_EARTH,
   normals,
+  median,
   STATE_KEYS,
   subsample,
   windowDetect,
@@ -37,9 +38,17 @@ export interface PreparedWindow {
 }
 
 export interface LabParams extends Degradation {
-  /** Along-track Δv of the event's manoeuvre shown in the lab (mm/s). */
+  /** Along-track Δv of the event's manoeuvre shown in the lab (mm/s); 0 removes it. */
   dvMmS: number;
+  /** Seed of the noise draw. The sampling phase is fixed so that σ = 0 is reproducible. */
   seed: number;
+}
+
+/** Central lab configuration (served with the robustness grid), overriding the copy
+ * embedded in each window so that one source of truth drives every window. */
+export interface LabConfig {
+  detector?: Detector;
+  template?: ArrayLike<number>;
 }
 
 export type Verdict = "detected" | "missed" | "quiet" | "false_alarm" | "insufficient";
@@ -60,7 +69,8 @@ export interface LabResult {
   nSamples: number;
 }
 
-export function prepare(win: LabWindow, realDvMmS: number | null): PreparedWindow {
+export function prepare(win: LabWindow, realDvMmS: number | null,
+                        config: LabConfig = {}): PreparedWindow {
   const start = Date.parse(win.start.endsWith("Z") ? win.start : `${win.start}Z`);
   const toS = (iso: string) => (Date.parse(iso.endsWith("Z") ? iso : `${iso}Z`) - start) / 1000;
   const states = Object.fromEntries(
@@ -76,8 +86,8 @@ export function prepare(win: LabWindow, realDvMmS: number | null): PreparedWindo
     tOffsetS: Float64Array.from(win.t_offset_s),
     stepS: win.step_s,
     eventS,
-    template: Float64Array.from(win.template_a),
-    detector: {
+    template: Float64Array.from(config.template ?? win.template_a),
+    detector: config.detector ?? {
       windowRevs: win.detector.window_revs,
       threshold: win.detector.threshold,
       normalisation: win.detector.normalisation,
@@ -99,7 +109,7 @@ function seriesFor(p: PreparedWindow, idx: Int32Array, a: Float64Array, revsPerB
 export function runLab(p: PreparedWindow, params: LabParams): LabResult {
   const deg: Degradation = { sigmaM: params.sigmaM, pointsPerDay: params.pointsPerDay,
                              rho: params.rho };
-  const idx = subsample(p.tOffsetS.length, deg.pointsPerDay, params.seed, p.stepS);
+  const idx = subsample(p.tOffsetS.length, deg.pointsPerDay, 0, p.stepS);
   const stepM = mmToDa(params.dvMmS - p.realDvMmS);
   const withStep = (a: Float64Array) => {
     for (let k = 0; k < a.length; k++) if (p.tOffsetS[idx[k]] > p.eventS) a[k] += stepM;
@@ -116,7 +126,7 @@ export function runLab(p: PreparedWindow, params: LabParams): LabResult {
   const { z } = windowScores(means, window, p.detector.normalisation, p.detector.floorM);
 
   // Time of each bin: mean epoch of its samples.
-  const oMin = Math.min(...Array.from(idx, (k) => p.orbit[k]));
+  const oMin = p.orbit[idx[0]]; // orbit numbers increase with time
   const tSum = new Float64Array(means.length);
   const tCount = new Float64Array(means.length);
   for (const k of idx) {
@@ -162,10 +172,8 @@ export function runLab(p: PreparedWindow, params: LabParams): LabResult {
   }
   let noise: number | null = null;
   if (steps.length >= 2) {
-    const sorted = [...steps].sort((x, y) => x - y);
-    const med = sorted[Math.floor(sorted.length / 2)];
-    const dev = steps.map((s) => Math.abs(s - med)).sort((x, y) => x - y);
-    noise = 1.4826 * dev[Math.floor(dev.length / 2)] / Math.SQRT2;
+    const med = median(steps);
+    noise = 1.4826 * median(steps.map((s) => Math.abs(s - med))) / Math.SQRT2;
   }
   const toNullable = (arr: Float64Array) => Array.from(arr, (v) => (Number.isNaN(v) ? null : v));
   return {

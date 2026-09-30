@@ -65,7 +65,8 @@ def test_lab_window(client):
 
 
 def test_lab_window_rejects_unexpected_ids(client):
-    for bad in ("..%2Fsatellites", "S1A-D1.json", "x", "S1A-D101%2F..%2F..%2Fetc"):
+    for bad in ("..%2Fsatellites", "S1A-D1.json", "x", "S1A-D101%2F..%2F..%2Fetc",
+                "S1A-D101%0A"):
         assert client.get(f"/api/lab/{bad}").status_code == 404
 
 

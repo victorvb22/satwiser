@@ -5,12 +5,15 @@ revolution with mean a, e, i, absolute orbit number, POD manoeuvre flag (label
 cross-check only) and daily F10.7 / Ap.
 
     python scripts/build_series.py --satellite S1A
+    python scripts/build_series.py --satellite S1A --weather-only   # refresh F10.7 / Ap
 """
 
 from __future__ import annotations
 
 import argparse
 import time
+
+import pandas as pd
 
 from satwiser.collect import spaceweather
 from satwiser.config import processed_dir, raw_dir
@@ -22,13 +25,18 @@ def main() -> None:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--satellite", default="S1A", choices=["S1A", "S1B", "S1C"])
     parser.add_argument("--workers", type=int, default=6)
+    parser.add_argument("--weather-only", action="store_true",
+                        help="recompute the space-weather columns of an existing series")
     args = parser.parse_args()
 
     t0 = time.time()
-    revs = series.build(raw_dir("poeorb", args.satellite), args.satellite, args.workers)
+    out = processed_dir() / f"revolutions_{args.satellite}.parquet"
+    if args.weather_only:
+        revs = pd.read_parquet(out).drop(columns=["f107_obs", "f107_81d", "ap"], errors="ignore")
+    else:
+        revs = series.build(raw_dir("poeorb", args.satellite), args.satellite, args.workers)
     sw = spaceweather.parse(raw_dir("spaceweather") / spaceweather.FILENAME)
     revs = series.add_space_weather(revs, sw)
-    out = processed_dir() / f"revolutions_{args.satellite}.parquet"
     revs.to_parquet(out)
     print(f"{len(revs)} revolutions, {revs.index[0]} to {revs.index[-1]} "
           f"({time.time() - t0:.0f} s) -> {out} ({out.stat().st_size / 1e6:.1f} MB)")

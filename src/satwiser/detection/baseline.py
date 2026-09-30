@@ -17,6 +17,8 @@ the maxima of runs where |z| exceeds the threshold.
 
 The windows are indexed by absolute orbit number, so missing revolutions (data gaps,
 incomplete revolutions) shrink the windows instead of silently stretching them in time.
+The rolling normalisation is centred: it looks ``norm_half_width`` revolutions ahead,
+so this detector is not causal (its delays are indicative only).
 The algorithm deliberately uses only means, medians and fixed windows so that it can be
 reimplemented identically in the browser (the lab's Web Worker).
 """

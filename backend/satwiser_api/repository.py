@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import math
 import re
-import urllib.error
+import threading
 import urllib.request
 from collections import OrderedDict
 from datetime import datetime
@@ -140,7 +140,7 @@ class LocalRepository:
         return self._documents["metrics"]
 
     def lab_window_gz(self, event_id: str) -> bytes | None:
-        if not EVENT_ID.match(event_id):
+        if not EVENT_ID.fullmatch(event_id):
             return None
         path = self.folder / "lab" / f"{event_id}.json.gz"
         return path.read_bytes() if path.exists() else None
@@ -154,6 +154,7 @@ class DatabaseRepository:
         self.lab_storage_url = lab_storage_url.rstrip("/") if lab_storage_url else None
         self._lab_cache: OrderedDict[str, bytes] = OrderedDict()
         self._cache_size = cache_size
+        self._cache_lock = threading.Lock()  # endpoints run in a thread pool
 
     def check(self) -> None:
         with self.engine.connect() as conn:
@@ -215,18 +216,20 @@ class DatabaseRepository:
 
     def lab_window_gz(self, event_id: str) -> bytes | None:
         """Compressed window fetched from object storage (small in-memory LRU cache)."""
-        if not self.lab_storage_url or not EVENT_ID.match(event_id):
+        if not self.lab_storage_url or not EVENT_ID.fullmatch(event_id):
             return None
-        if event_id in self._lab_cache:
-            self._lab_cache.move_to_end(event_id)
-            return self._lab_cache[event_id]
+        with self._cache_lock:
+            if event_id in self._lab_cache:
+                self._lab_cache.move_to_end(event_id)
+                return self._lab_cache[event_id]
         try:
             with urllib.request.urlopen(f"{self.lab_storage_url}/{event_id}.json.gz",
                                         timeout=30) as response:
                 payload = response.read()
-        except (urllib.error.HTTPError, urllib.error.URLError, FileNotFoundError):
+        except (OSError, ValueError):  # HTTP/URL errors, timeouts, missing local files
             return None
-        self._lab_cache[event_id] = payload
-        if len(self._lab_cache) > self._cache_size:
-            self._lab_cache.popitem(last=False)
+        with self._cache_lock:
+            self._lab_cache[event_id] = payload
+            if len(self._lab_cache) > self._cache_size:
+                self._lab_cache.popitem(last=False)
         return payload

@@ -50,7 +50,7 @@ export function pct(value: number | null | undefined, digits = 0): string {
 export const CLASS_LABEL: Record<string, string> = {
   station_keeping: "Maintien à poste",
   orbit_change: "Changement d’orbite",
-  unexplained: "Anomalie inexpliquée",
+  unexplained: "Détection inexpliquée",
 };
 
 export const ESA_TYPE_LABEL: Record<string, string> = {

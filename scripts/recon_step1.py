@@ -17,23 +17,22 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import matplotlib
+import numpy as np
+import pandas as pd
 
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402
-import numpy as np  # noqa: E402
-import pandas as pd  # noqa: E402
-
-from satwiser.collect import spaceweather  # noqa: E402
-from satwiser.config import REPO_ROOT, raw_dir  # noqa: E402
-from satwiser.io import eof, esa_history  # noqa: E402
-from satwiser.orbit.elements import MU_EARTH, elements_from_eof  # noqa: E402
-from satwiser.orbit.revolutions import revolution_means  # noqa: E402
+from satwiser import plotting
+from satwiser.collect import spaceweather
+from satwiser.config import REPO_ROOT, raw_dir
+from satwiser.io import eof, esa_history
+from satwiser.labels import cluster_burns
+from satwiser.orbit.elements import MU_EARTH, elements_from_eof
+from satwiser.orbit.revolutions import revolution_means
+from satwiser.plotting import DATA, EVENT, FAINT
 
 OUT = REPO_ROOT / "reports" / "step1"
-DATA = "#9CC2FF"
-EVENT = "#F4A259"
-FAINT = "#5E6782"
+#: Step 1 grouped burns closer than two hours; later steps use ``labels.MAX_GAP_H``
+#: (6 h), chosen from the burn-gap distribution. Kept here so this report is unchanged.
+STEP1_GAP_H = 2.0
 
 
 @dataclass
@@ -80,12 +79,6 @@ def sampling_report(frames: list[pd.DataFrame]) -> dict[str, object]:
     }
 
 
-def cluster_burns(burns: pd.DataFrame, max_gap_h: float = 2.0) -> np.ndarray:
-    """Label burns separated by less than ``max_gap_h`` hours as one manoeuvre."""
-    gaps = burns["start"].diff() > pd.Timedelta(hours=max_gap_h)
-    return np.cumsum(gaps.to_numpy())
-
-
 def burn_check(elements: pd.DataFrame, means: pd.DataFrame, burns: pd.DataFrame,
                window: int = 8) -> pd.DataFrame:
     """Compare observed mean-element jumps with those implied by the ESA burn records.
@@ -107,7 +100,7 @@ def burn_check(elements: pd.DataFrame, means: pd.DataFrame, burns: pd.DataFrame,
     u = np.interp(burns["start"].to_numpy().astype("datetime64[ns]").astype(np.int64), t_el, u_el)
     # Gauss equations, near-circular orbit: da = 2 a dv_T / v, di = dv_N cos(u) / v.
     burns["di_pred"] = burns["dv_n"] * np.cos(u) / v0
-    burns["cluster"] = cluster_burns(burns)
+    burns["cluster"] = cluster_burns(burns, STEP1_GAP_H)
 
     spans = []
     for _, g in burns.groupby("cluster"):
@@ -159,24 +152,8 @@ def detrended(means: pd.DataFrame, col: str, exclude: pd.DatetimeIndex, deg: int
     return means[col] - np.polyval(coef, t)
 
 
-def style(ax: plt.Axes) -> None:
-    ax.set_facecolor("#06080E")
-    for side in ("top", "right"):
-        ax.spines[side].set_visible(False)
-    for side in ("left", "bottom"):
-        ax.spines[side].set_color("#1E2436")
-    ax.tick_params(colors=FAINT, labelsize=8)
-    ax.yaxis.label.set_color("#8C95AB")
-    ax.xaxis.label.set_color("#8C95AB")
-    ax.title.set_color("#E8ECF4")
-    ax.grid(color="#161B2A", lw=0.6)
-
-
-def figure(rows: int, height: float = 3.0) -> tuple[plt.Figure, np.ndarray]:
-    fig, axes = plt.subplots(rows, 1, figsize=(11, height * rows), squeeze=False)
-    fig.patch.set_facecolor("#06080E")
-    for ax in axes[:, 0]:
-        style(ax)
+def figure(rows: int, height: float = 3.0):
+    fig, axes = plotting.figure(rows, 1, width=11, height=height)
     return fig, axes[:, 0]
 
 
@@ -234,10 +211,8 @@ def event_window(label: str, w: Window, event: pd.Timestamp, burns: pd.DataFrame
         ax.set_ylabel(unit)
     axes[0].set_title(f"{label} — detrended per-revolution mean a, e, i (orange: event, "
                       "grey: ESA burns, dotted: POD manoeuvre flag)", fontsize=10, loc="left")
-    fig.tight_layout()
     name = f"event_{w.satellite.lower()}_{event:%Y%m%d}.png"
-    fig.savefig(OUT / name, dpi=130, facecolor=fig.get_facecolor())
-    plt.close(fig)
+    plotting.save(fig, OUT / name)
     return {
         "label": label, "figure": name, "revs": len(means), "burns_in_window": len(burn_times),
         "pod_flags": [t.strftime("%Y-%m-%d %H:%M") for t in flagged],
@@ -288,9 +263,7 @@ def main() -> None:
     axes[2].plot([-lim, lim], [-lim, lim], color=FAINT, lw=0.8)
     axes[2].set_xlabel("Δa predicted from ESA record, km/s² along-track [m]")
     axes[2].set_ylabel("Δa observed [m]")
-    fig.tight_layout()
-    fig.savefig(OUT / "s1a_2023-06.png", dpi=130, facecolor=fig.get_facecolor())
-    plt.close(fig)
+    plotting.save(fig, OUT / "s1a_2023-06.png")
 
     # 3. Volume estimate -------------------------------------------------------------
     t0 = burns_a["start"].min().normalize()

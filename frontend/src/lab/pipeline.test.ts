@@ -28,12 +28,6 @@ const states: States = {
   vz: Float64Array.from(fixture.states.vz),
 };
 const orbit = Int32Array.from(fixture.orbit);
-const det: Detector = {
-  windowRevs: fixture.detector.window_revs,
-  threshold: fixture.detector.threshold,
-  normalisation: fixture.detector.normalisation as Detector["normalisation"],
-  floorM: fixture.detector.floor_m,
-};
 
 function expectClose(actual: ArrayLike<number>, expected: (number | null)[], tol: number) {
   expect(actual.length).toBe(expected.length);
@@ -44,7 +38,14 @@ function expectClose(actual: ArrayLike<number>, expected: (number | null)[], tol
   }
 }
 
+type FixtureDetector = typeof fixture.detector;
+
 describe.each(fixture.cases)("parity: $name", (c) => {
+  const raw: FixtureDetector = (c as { detector?: FixtureDetector }).detector ?? fixture.detector;
+  const det: Detector = {
+    windowRevs: raw.window_revs, threshold: raw.threshold,
+    normalisation: raw.normalisation as Detector["normalisation"], floorM: raw.floor_m,
+  };
   const deg = { sigmaM: c.sigma_m, pointsPerDay: c.points_per_day, rho: c.rho };
   const idx = subsample(fixture.t_offset_s.length, deg.pointsPerDay, c.phase, fixture.step_s);
 

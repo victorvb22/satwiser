@@ -36,11 +36,22 @@ function presetFloor(g: Robustness, key: string): string {
   return v === null ? "au-delà de 1 m/s" : dv(v * 10);
 }
 
+/** Calibration and test periods as year ranges, from the exported model dates. */
+function periods(model: Metrics["model"] | undefined): { cal: string; test: string } {
+  if (!model?.coverage_end) return { cal: "la période de calibration", test: "la période de test" };
+  const split = Number(model.split.slice(0, 4));
+  return {
+    cal: `${model.operational_start.slice(0, 4)}–${split - 1}`,
+    test: `${split}–${model.coverage_end.slice(0, 4)}`,
+  };
+}
+
 function Figures({ m, g }: { m: Metrics; g: Robustness }) {
+  const test = periods(m.model).test.replace("–", " → ");
   return (
     <div className="figures">
       <div className="card">
-        <span className="label">Rappel · précision (test 2020 → 2026)</span>
+        <span className="label">Rappel · précision (test {test})</span>
         <span className="value">{pct(m.test.recall)} · {pct(m.test.precision)}</span>
         <span className="faint" style={{ fontSize: 12 }}>
           {m.test.tp} manœuvres détectées sur {m.test.observable}, {m.test.fp} fausses alarmes
@@ -71,6 +82,7 @@ export default function Method() {
   const sat = sats.data?.[0];
   const model = m?.model as Metrics["model"] | undefined;
   const beta = model?.drag_beta;
+  const period = periods(model);
 
   return (
     <>
@@ -164,13 +176,14 @@ export default function Method() {
           </p>
           <p>
             Un gabarit de {model?.repeat_revolutions ?? 175} valeurs est estimé sur les
-            périodes calmes de 2014–2019 uniquement, en alternant deux étapes : retirer une
+            périodes calmes de {period.cal} uniquement, en alternant deux étapes : retirer une
             tendance lente de chaque segment calme, puis moyenner les résidus par position dans
             le cycle. Son amplitude atteint
             {model ? ` ${length(model.template_ptp_a_m)} crête à crête sur le demi-grand axe et ${num(model.template_ptp_i_mdeg, 1)} millidegrés sur l’inclinaison` : " plusieurs dizaines de mètres"}.
-            {m && <> Une fois retiré, le bruit d’une révolution à l’autre passe de{" "}
-            {length(m.noise_m.raw)} à {length(m.noise_m.template)} sur le demi-grand axe</>}
-            {" "}et le gain se maintient sur 2020–2026, jamais vu pendant l’estimation. La même
+            {m && <> Une fois retiré, le bruit d’une révolution à l’autre (révolutions calmes
+            de la période de calibration) passe de {length(m.noise_m.raw)} à{" "}
+            {length(m.noise_m.template)} sur le demi-grand axe</>}
+            {" "}et le gain se maintient sur {period.test}, jamais vu pendant l’estimation. La même
             correction appliquée à l’inclinaison rend visibles les manœuvres hors plan.
           </p>
         </Section>
@@ -186,10 +199,13 @@ export default function Method() {
             (F/F81)<sup>{beta ? num(beta[2], 2) : "b₂"}</sup> · (1 + Ap)<sup>{beta ? num(beta[3], 2) : "b₃"}</sup>
           </p>
           <p>
-            où F est le flux F10.7 du jour et F81 sa moyenne glissante sur 81 jours. Une loi
-            exponentielle s’ajustait aussi bien sur 2014–2019 mais surestimait d’un facteur deux
-            la décroissance du maximum solaire de 2024, hors de la plage de calibration ; la loi
-            de puissance l’extrapole correctement. Constat honnête : ce modèle explique bien la
+            où F est le flux F10.7 du jour et F81 sa moyenne sur les 81 jours précédents. Une
+            loi exponentielle ajustée sur les mêmes segments prédit
+            {model?.drag_2024_ratio
+              ? ` ${num(model.drag_2024_ratio.exponential, 2)} fois la décroissance observée au maximum solaire de 2024, contre ${num(model.drag_2024_ratio.power_law, 2)} pour la loi de puissance`
+              : " une décroissance bien trop forte au maximum solaire de 2024"}
+            ; 2024 est hors de la plage de calibration, et c’est la loi de puissance qui est
+            retenue. Constat honnête : ce modèle explique bien la
             décroissance mais n’améliore pas la détection, une droite ajustée localement faisant
             aussi bien ; il reste utile pour interpréter les séries et comme prédicteur physique.
           </p>
@@ -200,8 +216,10 @@ export default function Method() {
             <strong>Détecteur de référence.</strong> Pour chaque révolution, on compare la moyenne
             du demi-grand axe sur les W révolutions suivantes à celle des W précédentes, en
             sautant la révolution de la poussée, partiellement décalée. La statistique est
-            normalisée de façon robuste (médiane, écart absolu médian) et une alarme est levée
-            au-delà d’un seuil. C’est ce détecteur, simple et portable, qui tourne dans le labo.
+            normalisée de façon robuste (médiane, écart absolu médian, sur une fenêtre centrée
+            d’une quinzaine de jours, donc non causale) et une alarme est levée au-delà d’un
+            seuil. Une variante, normalisée à partir des seules différences entre points
+            successifs, tourne dans le labo.
           </p>
           <p>
             <strong>Détecteur principal (CUSUM).</strong> Sur le demi-grand axe corrigé de la
@@ -214,9 +232,12 @@ export default function Method() {
             de h{m ? ` = ${num(Number(m.detector.h), 0)}` : ""}. Les écarts sont écrêtés, pour
             qu’une révolution aberrante isolée ne suffise pas, et l’échelle du bruit est estimée
             sur les révolutions récentes, ce qui absorbe les périodes où la traînée est moins
-            bien modélisée. Le détecteur est causal : une alarme n’utilise aucune donnée
-            postérieure. L’instant de rupture est la dernière révolution où la somme était
-            nulle.
+            bien modélisée. La décision à une révolution donnée n’utilise que les révolutions
+            passées ; la correction de traînée utilise le F10.7 et l’Ap du jour (au plus un
+            jour d’avance sur ces indices) et une moyenne de F10.7 glissante vers le passé.
+            Les délais sont comptés en temps orbital : ils n’incluent pas le délai de
+            publication des orbites précises (environ trois semaines). L’instant de rupture est
+            la dernière révolution où la somme était nulle.
           </p>
           <p>
             <strong>Estimation du Δv.</strong> Le saut de demi-grand axe est mesuré par deux droites
@@ -228,19 +249,21 @@ export default function Method() {
         <Section id="classification" title="Classification des événements">
           <p>
             Chaque détection est rangée dans l’une de trois classes : maintien à poste,
-            changement d’orbite (inclinaison, séquence, abaissement) ou anomalie inexpliquée.
-            L’historique ESA n’ayant pas de classe « anomalie », celle-ci est définie
-            opérationnellement comme une détection sans manœuvre ESA correspondante : manœuvre
-            absente de l’historique, artefact de restitution d’orbite ou effet de la traînée
-            lors d’un orage géomagnétique.
+            changement d’orbite (inclinaison, séquence, abaissement) ou détection inexpliquée.
+            L’historique ESA n’ayant pas de classe « anomalie », cette dernière classe est
+            définie opérationnellement comme une détection sans manœuvre ESA correspondante :
+            manœuvre absente de l’historique, artefact de
+            restitution d’orbite ou, le plus souvent, effet de la traînée lors d’un orage
+            géomagnétique.
           </p>
           <p>
-            Deux approches ont été comparées sur 2020–2026 : une règle sur les sauts estimés
+            Deux approches ont été comparées sur {period.test} : une règle sur les sauts estimés
             (saut d’inclinaison supérieur à 5 σ ou demi-grand axe en baisse : changement
             d’orbite ; hausse significative : maintien à poste ; sinon : inexpliquée) et un
-            modèle de gradient boosting entraîné sur 2014–2019. La règle généralise mieux, la
-            période d’entraînement (Soleil calme) contenant trop peu d’anomalies : c’est elle
-            qu’affiche l’application.
+            modèle de gradient boosting entraîné sur {period.cal}. La règle obtient de
+            meilleurs scores sur {period.test}, la période d’entraînement (Soleil calme) contenant trop peu
+            de détections inexpliquées : c’est elle qu’affiche l’application. Ce choix a été
+            fait au vu des scores de test ; ce n’est donc pas une sélection hors échantillon.
           </p>
         </Section>
 
@@ -248,17 +271,20 @@ export default function Method() {
           <p>
             La vérité terrain est l’historique ESA. Une détection est correcte si elle tombe à
             une révolution près d’une manœuvre ; plusieurs alarmes sur une même manœuvre ne
-            comptent qu’une fois et ne sont pas des fausses alarmes. Tous les réglages sont
-            choisis sur{model ? ` ${dateFr(model.operational_start)} – ${dateFr(model.split)}` : " 2014–2019"} et
+            comptent qu’une fois et ne sont pas des fausses alarmes. Tous les détecteurs sont
+            évalués sur les mêmes manœuvres (même fenêtre d’observabilité
+            {m?.observe_window ? ` de ${m.observe_window} révolutions` : ""}). Tous les réglages sont
+            choisis sur{model ? ` ${dateFr(model.operational_start)} – ${dateFr(model.split)}` : " la période de calibration"} et
             les résultats rapportés sur la période suivante, jusqu’à la fin de l’historique ESA :
             aucune information du futur ne sert à régler le passé. La phase d’acquisition de
-            l’orbite de référence (avant août 2014) est exclue.
+            l’orbite de référence
+            {model ? ` (avant le ${dateFr(model.operational_start)})` : ""} est exclue.
           </p>
           {m && (
             <table className="metrics">
               <thead>
                 <tr><th>Détecteur (période de test)</th><th>Rappel</th><th>Précision</th><th>F1</th>
-                    <th>Erreur Δv</th><th>Délai</th></tr>
+                    <th>Erreur Δv</th><th>Délai (orbite)</th></tr>
               </thead>
               <tbody>
                 {m.comparison.map((row) => (
@@ -268,17 +294,19 @@ export default function Method() {
                     <td>{pct(Number(row["test precision"]))}</td>
                     <td>{num(Number(row["test f1"]), 2)}</td>
                     <td>{dv(Number(row["test Δv err [mm/s]"]))}</td>
-                    <td>{num(Number(row["test delay [h]"]), 1)} h</td>
+                    <td>{num(Number(row["test delay [h]"]), 1)} h{row["causal delay"] ? "" : " *"}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           )}
           <p>
+            * Délai indicatif : la normalisation des détecteurs de référence utilise une fenêtre
+            centrée, ils ne peuvent donc pas lever l’alarme aussi tôt en conditions réelles.
             Le détecteur principal gagne surtout en rappel sur les petites manœuvres et sur les
-            manœuvres d’inclinaison, et divise le délai de détection ; la référence corrigée
-            reste plus précise. Les fausses alarmes du détecteur principal se concentrent au
-            maximum solaire, en particulier autour des orages géomagnétiques.
+            manœuvres d’inclinaison ; la référence corrigée reste plus précise. Les fausses
+            alarmes du détecteur principal se concentrent au maximum solaire, en particulier
+            autour des orages géomagnétiques.
           </p>
         </Section>
 
@@ -303,9 +331,9 @@ export default function Method() {
           </p>
           <p>
             Dans le navigateur, un Web Worker recalcule la série à chaque mouvement de curseur à
-            partir d’états réels à une minute d’intervalle ; il reproduit exactement
-            l’implémentation Python, ce que vérifient des tests de parité sur des jeux de données
-            partagés à graine fixe. L’échelle du détecteur y est estimée à partir des différences
+            partir d’états réels à une minute d’intervalle ; il reproduit l’implémentation
+            Python à 10⁻⁵ m près, ce que vérifient des tests de parité sur des jeux de données
+            partagés à graine fixe, rejoués des deux côtés. L’échelle du détecteur y est estimée à partir des différences
             entre points successifs, qu’une manœuvre ne perturbe qu’une fois, ce qui le rend
             robuste aux fenêtres contenant plusieurs manœuvres.
           </p>
@@ -320,15 +348,20 @@ export default function Method() {
               2024, les orages géomagnétiques produisent davantage de fausses alarmes, et un
               seuil plus élevé aurait mieux fonctionné a posteriori.</li>
             <li>Les types de manœuvre sont déduits de la géométrie des poussées, pas fournis
-              par l’ESA. Aucune des deux anomalies connues (impact de particule sur
-              Sentinel-1A en août 2016, panne d’alimentation de Sentinel-1B en décembre 2021) ne
-              laisse de signature orbitale mesurable.</li>
+              par l’ESA.</li>
+            <li>Les deux anomalies connues ont été réexaminées sur la série corrigée : l’impact
+              de particule sur Sentinel-1A (août 2016) ne laisse aucun saut au-delà des
+              fluctuations des révolutions calmes ; pour la panne d’alimentation de Sentinel-1B
+              (décembre 2021), rien non plus sur la partie de la journée testable, le reste
+              étant masqué par une manœuvre la veille au soir (rapport « anomalies » du
+              dépôt).</li>
             <li>Avec un échantillonnage clairsemé, des termes à courte période non modélisés
               fixent un plancher de détection indépendant du bruit ; un gabarit à l’échelle de
               l’échantillon l’abaisserait, mais supposerait des connaissances issues d’orbites
               précises.</li>
-            <li>Le labo du navigateur travaille à un point par minute (10 s hors ligne) et ne
-              propose que des fenêtres préchargées pour une sélection d’événements.</li>
+            <li>Le labo du navigateur travaille à un point par minute (10 s hors ligne).</li>
+            <li>Les délais de détection sont en temps orbital et n’incluent pas le délai de
+              publication des orbites précises (environ trois semaines).</li>
           </ul>
         </Section>
 

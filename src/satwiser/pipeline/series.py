@@ -94,14 +94,19 @@ def stream_revolutions(frames: Iterator[pd.DataFrame], chunk_files: int = 30,
             if verbose:
                 print(f"{count} files, {sum(len(r) for r in results)} revolutions", flush=True)
     flush(final=True)
-    out = pd.concat(results)
-    return out[~out.index.duplicated(keep="first")]
+    return pd.concat(results)
 
 
 def add_space_weather(revs: pd.DataFrame, sw: pd.DataFrame) -> pd.DataFrame:
-    """Join daily F10.7 (observed), its 81-day centred mean, and Ap by UTC date."""
+    """Join daily F10.7 (observed), its trailing 81-day mean, and Ap by UTC date.
+
+    The 81-day mean is trailing (ending on the day itself; the GFZ file has one row per
+    day, so 81 rows are 81 days). Values are joined by UTC day, so revolutions early in
+    a day see that day's F10.7 (measured around 20 UT) and daily Ap: a look-ahead of at
+    most one day on the drag covariates, none on the orbit data.
+    """
     daily = sw[["f107_obs", "ap"]].copy()
-    daily["f107_81d"] = daily["f107_obs"].rolling(81, center=True, min_periods=40).mean()
+    daily["f107_81d"] = daily["f107_obs"].rolling(81, min_periods=40).mean()
     day = revs.index.normalize()
     joined = daily.reindex(day)
     out = revs.copy()

@@ -152,44 +152,6 @@ def min_detectable(dvs: np.ndarray, p: np.ndarray, level: float = 0.9) -> float:
     return float(np.exp(x0 + frac * (x1 - x0)))
 
 
-# ------------------------------------------------------------------------------ replay
-
-def replay(windows, mans, template, deg: lab.Degradation, rng, det: lab.LabDetector) -> dict:
-    tp = fn = fp = 0
-    for states in windows:
-        res = lab.analyse(states, template, deg, det, rng, int(rng.integers(0, 8640)))
-        if np.isnan(res["z"]).all():
-            continue
-        b, w = res["revs_per_bin"], res["window"]
-        orbit = states["orbit"].to_numpy()
-        t = states.index
-        o_first = orbit.min()
-        n_bins = len(res["bins"])
-        inside = mans[(mans["start"] >= t[0]) & (mans["stop"] < t[-1])]
-        truth = []
-        for _, m in inside.iterrows():
-            k = (orbit[np.searchsorted(t, m["start"])] - o_first) // b
-            k1 = (orbit[min(np.searchsorted(t, m["stop"]), len(t) - 1)] - o_first) // b
-            if w <= k and k1 < n_bins - w:  # both detector windows inside the data
-                truth.append((k, k1))
-        found = list(res["detections"])
-        matched = set()
-        for k, k1 in truth:
-            hit = [f for f in found if k - 1 <= f <= k1 + 1 and f not in matched]
-            if hit:
-                matched.add(hit[0])
-                tp += 1
-            else:
-                fn += 1
-        # Detections near an unscorable manoeuvre (window edges) are not false alarms.
-        edge = [((orbit[np.searchsorted(t, m["start"])] - o_first) // b) for _, m in
-                inside.iterrows()]
-        fp += sum(1 for f in found if f not in matched and all(abs(f - e) > 1 for e in edge))
-    recall = tp / (tp + fn) if tp + fn else np.nan
-    precision = tp / (tp + fp) if tp + fp else np.nan
-    return {"tp": tp, "fn": fn, "fp": fp, "recall": recall, "precision": precision}
-
-
 # ----------------------------------------------------------------------------- figures
 
 def fig_heatmaps(grid: pd.DataFrame, path):
@@ -229,83 +191,122 @@ def fig_min_dv(grid_min: pd.DataFrame, path):
     save(fig, path)
 
 
-# -------------------------------------------------------------------------------- main
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--satellite", default="S1A")
-    parser.add_argument("--workers", type=int, default=8)
-    args = parser.parse_args()
-    sat, workers = args.satellite, args.workers
-    OUT.mkdir(parents=True, exist_ok=True)
-    model = json.loads((processed_dir() / f"model_{sat}.json").read_text())
-    template = np.asarray(model["template"]["values"]["a"])
-    mans = pd.read_parquet(processed_dir() / f"manoeuvres_{sat}.parquet")
-    ops = pd.Timestamp(model["operational_start"])
-    coverage_end = mans["stop"].max()
-    split = pd.Timestamp(model["split"])
+
+# ------------------------------------------------------------------------------ replay
+
+def replay_many(windows, mans, template, deg: lab.Degradation, seed: int,
+                detectors: list[lab.LabDetector]) -> list[dict]:
+    """Score several detector settings on real manoeuvre windows.
+
+    Each window is degraded and binned once (same noise draw for every detector), then
+    every detector runs on the same bin means. Truth bins use the first *sampled* orbit
+    as origin, like :func:`satwiser.lab.bin_means`.
+    """
+    rng = np.random.default_rng(seed)
+    counts = [{"tp": 0, "fn": 0, "fp": 0} for _ in detectors]
+    for states in windows:
+        binned = lab.degraded_means(states, template, deg, rng, int(rng.integers(0, 8640)))
+        b, o_first = binned["revs_per_bin"], binned["first_orbit"]
+        n_bins = len(binned["bins"])
+        orbit = states["orbit"].to_numpy()
+        t = states.index
+        inside = mans[(mans["start"] >= t[0]) & (mans["stop"] < t[-1])]
+        spans = [((orbit[np.searchsorted(t, m["start"])] - o_first) // b,
+                  (orbit[min(np.searchsorted(t, m["stop"]), len(t) - 1)] - o_first) // b)
+                 for _, m in inside.iterrows()]
+        for det, count in zip(detectors, counts, strict=True):
+            res = lab.detect_on_means(binned, det)
+            if np.isnan(res["z"]).all():
+                continue
+            w = res["window"]
+            truth = [(k, k1) for k, k1 in spans if w <= k and k1 < n_bins - w]
+            found = list(res["detections"])
+            matched = set()
+            for k, k1 in truth:
+                hit = [f for f in found if k - 1 <= f <= k1 + 1 and f not in matched]
+                if hit:
+                    matched.add(hit[0])
+                    count["tp"] += 1
+                else:
+                    count["fn"] += 1
+            # Detections next to any manoeuvre (scorable or at the edges) are not false
+            # alarms.
+            count["fp"] += sum(1 for f in found if f not in matched
+                               and all(abs(f - k) > 1 for k, _ in spans))
+    out = []
+    for count in counts:
+        tp, fn, fp = count["tp"], count["fn"], count["fp"]
+        out.append({**count, "recall": tp / (tp + fn) if tp + fn else np.nan,
+                    "precision": tp / (tp + fp) if tp + fp else np.nan,
+                    "f1": 2 * tp / (2 * tp + fn + fp) if tp else 0.0})
+    return out
+
+
+def detector_from(row) -> lab.LabDetector:
+    return lab.LabDetector(int(row["window_revs"]), float(row["threshold"]),
+                           str(row["normalisation"]), float(row["floor_m"]))
+
+
+# ------------------------------------------------------------------------------ stages
+
+def select_windows(mans, ops, split, coverage_end, sat, workers) -> dict:
+    """Quiet windows (injection), test-period and calibration-period manoeuvre windows."""
     rng = np.random.default_rng(SEED)
-
+    half = pd.Timedelta(days=WINDOW_DAYS / 2)
     starts = quiet_windows(mans, ops, coverage_end)
     pick = np.sort(rng.choice(len(starts), size=min(N_QUIET, len(starts)), replace=False))
     quiet_starts = [starts[k] for k in pick]
-    test_mans = mans[(mans["start"] >= split + pd.Timedelta(days=WINDOW_DAYS / 2))
-                     & (mans["stop"] <= coverage_end - pd.Timedelta(days=WINDOW_DAYS / 2))]
-    real_pick = np.sort(rng.choice(len(test_mans), size=min(N_REAL, len(test_mans)),
-                                   replace=False))
-    real_starts = [(test_mans["start"].iloc[k] - pd.Timedelta(days=WINDOW_DAYS / 2)).floor("h")
-                   for k in real_pick]
-    cal_mans = mans[(mans["start"] >= ops + pd.Timedelta(days=WINDOW_DAYS / 2))
-                    & (mans["stop"] <= split - pd.Timedelta(days=WINDOW_DAYS / 2))]
-    cal_pick = np.sort(rng.choice(len(cal_mans), size=min(N_REAL, len(cal_mans)),
-                                  replace=False))
-    cal_starts = [(cal_mans["start"].iloc[k] - pd.Timedelta(days=WINDOW_DAYS / 2)).floor("h")
-                  for k in cal_pick]
-    quiet_paths = cache_windows(quiet_starts, "quiet", sat, workers)
-    real_paths = cache_windows(real_starts, "real", sat, workers)
-    cal_paths = cache_windows(cal_starts, "calib", sat, workers)
-    real_windows = [pd.read_parquet(p) for p in real_paths]
-    cal_windows = [pd.read_parquet(p) for p in cal_paths]
 
-    # Lab detector calibration (calibration-period windows, POD preset) -----------------
+    def centred(sub):
+        chosen = np.sort(rng.choice(len(sub), size=min(N_REAL, len(sub)), replace=False))
+        return [(sub["start"].iloc[k] - half).floor("h") for k in chosen]
+
+    real_starts = centred(mans[(mans["start"] >= split + half)
+                               & (mans["stop"] <= coverage_end - half)])
+    cal_starts = centred(mans[(mans["start"] >= ops + half) & (mans["stop"] <= split - half)])
+    return {
+        "quiet_starts": quiet_starts,
+        "quiet_paths": cache_windows(quiet_starts, "quiet", sat, workers),
+        "real": [pd.read_parquet(p) for p in cache_windows(real_starts, "real", sat, workers)],
+        "calib": [pd.read_parquet(p) for p in cache_windows(cal_starts, "calib", sat, workers)],
+    }
+
+
+def calibrate_lab_detector(win: dict, mans, template) -> dict:
+    """Select the lab detector on calibration-period windows (POD preset)."""
     pod = lab.PRESETS["pod"][1]
-    det_rows = []
-    for cand in DETECTOR_GRID:
-        rep_c = replay(cal_windows, mans, template, pod, np.random.default_rng(SEED + 3), cand)
-        f1 = (2 * rep_c["tp"] / (2 * rep_c["tp"] + rep_c["fn"] + rep_c["fp"])
-              if rep_c["tp"] else 0.0)
-        det_rows.append({**cand.__dict__, **rep_c, "f1": f1})
-    det_grid = pd.DataFrame(det_rows)
+    scores = replay_many(win["calib"], mans, template, pod, SEED + 3, DETECTOR_GRID)
+    det_grid = pd.DataFrame([{**c.__dict__, **s} for c, s in zip(DETECTOR_GRID, scores,
+                                                                  strict=True)])
     det_grid.to_csv(OUT / "lab_detector_calibration.csv", index=False)
     # Ties on calibration F1 and precision are broken towards the difference-based scale,
     # whose value does not depend on how many manoeuvres the window holds.
     det_grid["prefer"] = (det_grid["normalisation"] == "diff").astype(int)
     ranked = det_grid.sort_values(["f1", "precision", "prefer"], ascending=False)
     best = ranked.iloc[0]
-    det = lab.LabDetector(int(best["window_revs"]), float(best["threshold"]),
-                          str(best["normalisation"]), float(best["floor_m"]))
+    det = detector_from(best)
     tied = ranked[(ranked["f1"] == best["f1"]) & (ranked["precision"] == best["precision"])]
-    tied_rows = []
-    for _, row in tied.iterrows():
-        cand = lab.LabDetector(int(row["window_revs"]), float(row["threshold"]),
-                               str(row["normalisation"]), float(row["floor_m"]))
-        rt = replay(real_windows, mans, template, pod, np.random.default_rng(SEED + 1), cand)
-        tied_rows.append({"W": cand.window_revs, "threshold": cand.threshold,
-                          "normalisation": cand.normalisation, "floor_m": cand.floor_m,
-                          "calibration f1": row["f1"], "test recall": rt["recall"],
-                          "test precision": rt["precision"]})
-    tied_tab = pd.DataFrame(tied_rows)
     ref = det_grid[(det_grid["window_revs"] == 12) & (det_grid["threshold"] == 4.0)
                    & (det_grid["normalisation"] == "window")].iloc[0]
-    test_best = replay(real_windows, mans, template, pod, np.random.default_rng(SEED + 1), det)
-    test_ref = replay(real_windows, mans, template, pod, np.random.default_rng(SEED + 1),
-                      lab.LabDetector())
+    candidates = [detector_from(r) for _, r in tied.iterrows()] + [det, lab.LabDetector()]
+    test = replay_many(win["real"], mans, template, pod, SEED + 1, candidates)
+    tied_tab = pd.DataFrame([{"W": c.window_revs, "threshold": c.threshold,
+                              "normalisation": c.normalisation, "floor_m": c.floor_m,
+                              "calibration f1": row["f1"], "test recall": s["recall"],
+                              "test precision": s["precision"]}
+                             for c, (_, row), s in zip(candidates[:len(tied)], tied.iterrows(),
+                                                       test[:len(tied)], strict=True)])
+    return {"det": det, "best": best, "ref": ref, "tied": tied_tab,
+            "test_best": test[len(tied)], "test_ref": test[len(tied) + 1]}
 
-    # Injection grid ---------------------------------------------------------------------
+
+def run_injection_grid(win: dict, template, det, workers
+                       ) -> tuple[pd.DataFrame, pd.DataFrame]:
     cells = [(s, p, r, SEED + k) for k, (s, p, r) in enumerate(product(SIGMAS, POINTS, RHOS))]
     rows = []
     with ProcessPoolExecutor(max_workers=workers, initializer=_init,
-                             initargs=(quiet_paths, template, det)) as pool:
+                             initargs=(win["quiet_paths"], template, det)) as pool:
         for sigma, points, rho, hits, fa, usable in pool.map(_cell, cells, chunksize=2):
             for dv, h in zip(DVS_CM, hits, strict=True):
                 rows.append({"sigma": sigma, "points": points, "rho": rho, "dv_cm": dv,
@@ -319,51 +320,59 @@ def main() -> None:
                     "min_dv_cm": min_detectable(g["dv_cm"].to_numpy(), g["p_detect"].to_numpy()),
                     "fa_per_window": g["fa_per_window"].iloc[0]}), include_groups=False)
                 .reset_index())
+    return grid, grid_min
 
-    # Presets and replay --------------------------------------------------------------------
-    preset_rows = []
+
+def presets_and_sweep(win: dict, mans, template, det, grid_min
+                      ) -> tuple[pd.DataFrame, pd.DataFrame]:
+    rows = []
     for key, (label, deg) in lab.PRESETS.items():
-        g = grid_min[(grid_min["sigma"] == deg.sigma_m) & (grid_min["points"] == deg.points_per_day)
+        g = grid_min[(grid_min["sigma"] == deg.sigma_m)
+                     & (grid_min["points"] == deg.points_per_day)
                      & (grid_min["rho"] == deg.rho)].iloc[0]
-        rep = replay(real_windows, mans, template, deg, np.random.default_rng(SEED + 1), det)
-        preset_rows.append({"preset": label, "key": key, "sigma_m": deg.sigma_m,
-                            "points_per_day": deg.points_per_day, "rho": deg.rho,
-                            "min_dv_90_cm_s": g["min_dv_cm"],
-                            "false_alarms_per_10_days": g["fa_per_window"],
-                            "replay_recall": rep["recall"], "replay_precision": rep["precision"],
-                            "replay_tp": rep["tp"], "replay_fn": rep["fn"], "replay_fp": rep["fp"]})
-    presets = pd.DataFrame(preset_rows).set_index("preset")
-    sweep = []
-    for sigma in SIGMAS:
-        rep = replay(real_windows, mans, template, lab.Degradation(sigma, 8640, 0.0),
-                     np.random.default_rng(SEED + 2), det)
-        sweep.append({"sigma_m": sigma, **rep})
-    sweep = pd.DataFrame(sweep).set_index("sigma_m")
+        rep = replay_many(win["real"], mans, template, deg, SEED + 1, [det])[0]
+        rows.append({"preset": label, "key": key, "sigma_m": deg.sigma_m,
+                     "points_per_day": deg.points_per_day, "rho": deg.rho,
+                     "min_dv_90_cm_s": g["min_dv_cm"],
+                     "false_alarms_per_10_days": g["fa_per_window"],
+                     "replay_recall": rep["recall"], "replay_precision": rep["precision"],
+                     "replay_tp": rep["tp"], "replay_fn": rep["fn"], "replay_fp": rep["fp"]})
+    presets = pd.DataFrame(rows).set_index("preset")
+    sweep = pd.DataFrame([{"sigma_m": sigma, **replay_many(
+        win["real"], mans, template, lab.Degradation(sigma, 8640, 0.0), SEED + 2, [det])[0]}
+        for sigma in SIGMAS]).set_index("sigma_m")
+    return presets, sweep
 
-    # App export ------------------------------------------------------------------------------
+
+def export_grid(grid, grid_min, presets, det, template) -> None:
+    """Grid for the app heatmap, with the lab configuration (detector, template)."""
+    def cell(s, dv, p, r):
+        return float(grid[(grid["sigma"] == s) & (grid["dv_cm"] == dv) & (grid["points"] == p)
+                          & (grid["rho"] == r)]["p_detect"].iloc[0])
+
+    def min_dv(s, p, r):
+        v = grid_min[(grid_min["sigma"] == s) & (grid_min["points"] == p)
+                     & (grid_min["rho"] == r)]["min_dv_cm"].iloc[0]
+        return None if np.isnan(v) else float(v)
+
     export = {
         "axes": {"sigma_m": SIGMAS, "dv_cm_s": DVS_CM, "points_per_day": POINTS, "rho": RHOS},
-        "p_detect": [[[[float(grid[(grid["sigma"] == s) & (grid["dv_cm"] == dv)
-                                   & (grid["points"] == p) & (grid["rho"] == r)]["p_detect"]
-                              .iloc[0])
-                        for r in RHOS] for p in POINTS] for dv in DVS_CM] for s in SIGMAS],
+        "p_detect": [[[[cell(s, dv, p, r) for r in RHOS] for p in POINTS] for dv in DVS_CM]
+                     for s in SIGMAS],
         "p_detect_index_order": ["sigma_m", "dv_cm_s", "points_per_day", "rho"],
-        "min_dv_90_cm_s": [[[None if np.isnan(v) else float(v) for v in
-                             [grid_min[(grid_min["sigma"] == s) & (grid_min["points"] == p)
-                                       & (grid_min["rho"] == r)]["min_dv_cm"].iloc[0]
-                              for r in RHOS]] for p in POINTS] for s in SIGMAS],
+        "min_dv_90_cm_s": [[[min_dv(s, p, r) for r in RHOS] for p in POINTS] for s in SIGMAS],
         "presets": {row["key"]: {"label": name, "sigma_m": row["sigma_m"],
                                  "points_per_day": row["points_per_day"], "rho": row["rho"]}
                     for name, row in presets.iterrows()},
-        "detector": det.__dict__, "trials_per_cell": TRIALS,
-        "window_days": WINDOW_DAYS,
+        "detector": det.__dict__, "trials_per_cell": TRIALS, "window_days": WINDOW_DAYS,
+        "template_a": [float(v) for v in template],
     }
     (processed_dir() / "robustness_grid.json").write_text(json.dumps(export))
 
-    fig_heatmaps(grid, OUT / "heatmaps_presets.png")
-    fig_min_dv(grid_min, OUT / "robustness_curve.png")
 
-    years = pd.Series([s.year for s in quiet_starts]).value_counts().sort_index()
+def render_report(win, cal, presets, grid_min, sweep, ops, split) -> str:
+    det, best, ref = cal["det"], cal["best"], cal["ref"]
+    years = pd.Series([s.year for s in win["quiet_starts"]]).value_counts().sort_index()
     base = grid_min[(grid_min["points"] == 8640) & (grid_min["rho"] == 0.0)].set_index("sigma")
     lines = [
         "# Step 4 — degradation and robustness curve",
@@ -377,41 +386,41 @@ def main() -> None:
         "when sampling is sparse. Settings calibrated below.",
         "- Degradation: position noise σ per axis and velocity noise n·σ (orbit-like error), "
         "AR(1) correlation ρ between output samples, even subsampling. See `satwiser.lab`.",
-        f"- Injection grid: {len(quiet_starts)} quiet ten-day windows (no ESA manoeuvre; "
+        f"- Injection grid: {len(win['quiet_starts'])} quiet ten-day windows (no ESA manoeuvre; "
         f"years: {', '.join(f'{y}: {n}' for y, n in years.items())}), {TRIALS} trials per "
         f"cell, {len(SIGMAS)} noise × {len(DVS_CM)} Δv × {len(POINTS)} sampling × "
         f"{len(RHOS)} correlation levels. A trial counts as detected when an alarm falls "
         "within one bin of the injected epoch.",
-        f"- Replay: {len(real_paths)} ten-day windows centred on randomly drawn test-period "
+        f"- Replay: {len(win['real'])} ten-day windows centred on randomly drawn test-period "
         "ESA manoeuvres; all ESA manoeuvres whose detector windows fit in the data are scored "
-        "(one-bin tolerance).",
+        "(one-bin tolerance, bins counted from the first sampled orbit).",
         "- Quiet windows need ten days without manoeuvre, which is rare at solar maximum: the "
         "injection windows are biased towards low solar activity (see years above).",
         "",
         "## Lab detector calibration",
         "",
         f"- {len(DETECTOR_GRID)} settings (W, threshold, normalisation, floor) scored by F1 "
-        f"on {len(cal_windows)} ten-day windows centred on calibration-period manoeuvres "
+        f"on {len(win['calib'])} ten-day windows centred on calibration-period manoeuvres "
         f"({ops:%Y-%m} to {split:%Y-%m}), POD preset.",
         f"- Selected: **W = {det.window_revs}, |z| > {det.threshold:g}, "
         f"{det.normalisation} normalisation"
         + (f", floor {det.floor_m:g} m" if det.normalisation == "diff" else "") + "**; "
         f"calibration F1 {best['f1']:.3f} (recall {best['recall']:.3f}, precision "
         f"{best['precision']:.3f}).",
-        f"- {len(tied_tab)} settings tie on calibration F1 and precision; ties are broken "
+        f"- {len(cal['tied'])} setting(s) tie on calibration F1 and precision; ties are broken "
         "towards the difference-based normalisation, whose scale does not depend on how many "
         "manoeuvres a window holds (at solar maximum a ten-day window often holds three). "
         "This rule was fixed after an earlier run of this script had shown the test "
         "behaviour of both normalisations, so the test scores of all tied settings are "
         "reported:",
         "",
-        tied_tab.to_markdown(index=False, floatfmt=".3f"),
+        cal["tied"].to_markdown(index=False, floatfmt=".3f"),
         "",
         f"- Starting point (W = 12, |z| > 4, window-wide median/MAD): calibration F1 "
         f"{ref['f1']:.3f}.",
-        f"- On the test windows, POD preset: selected recall {test_best['recall']:.3f}, "
-        f"precision {test_best['precision']:.3f}; starting point recall "
-        f"{test_ref['recall']:.3f}, precision {test_ref['precision']:.3f}.",
+        f"- On the test windows, POD preset: selected recall {cal['test_best']['recall']:.3f}, "
+        f"precision {cal['test_best']['precision']:.3f}; starting point recall "
+        f"{cal['test_ref']['recall']:.3f}, precision {cal['test_ref']['precision']:.3f}.",
         "- Window-wide normalisation suffers in busy windows: each manoeuvre inflates the "
         "MAD over 2W values of the statistic. The difference-based scale is affected by a "
         "step only once.",
@@ -441,18 +450,16 @@ def main() -> None:
     ]
     for rho in RHOS:
         tab = grid_min[grid_min["rho"] == rho].pivot(index="sigma", columns="points",
-                                                      values="min_dv_cm")
-        tab = tab[list(POINTS)]
+                                                      values="min_dv_cm")[list(POINTS)]
         lines += [f"ρ = {rho:g}", "", tab.to_markdown(floatfmt=".3g"), ""]
     lines += [
         "## Reading the curves",
         "",
         "- At 144 samples per day and below (one every ten minutes or fewer) the curves "
-        "flatten: the per-bin "
-        "mean no longer averages out the short-period terms that the first-order J2 "
-        "correction leaves in the semi-major axis, so the floor does not depend on the "
-        "injected noise. Classical higher-order zonal models would not remove it: "
-        "`scripts/check_short_period_floor.py` shows that this residual is itself a "
+        "flatten: the per-bin mean no longer averages out the short-period terms that the "
+        "first-order J2 correction leaves in the semi-major axis, so the floor does not "
+        "depend on the injected noise. Classical higher-order zonal models would not remove "
+        "it: `scripts/check_short_period_floor.py` shows that this residual is itself a "
         "ground-track signature (see `short_period_floor.json` for the out-of-sample "
         "reduction obtained with a sample-level template). It is not used for the presets: "
         "it is prior knowledge from precise orbits that a TLE-only user would not have.",
@@ -466,8 +473,32 @@ def main() -> None:
         "- `robustness_curve.png`: smallest Δv detected at 90 % against noise, per sampling.",
         "",
     ]
-    (OUT / "robustness.md").write_text("\n".join(lines), encoding="utf-8")
-    print("\n".join(lines))
+    return "\n".join(lines)
+
+
+# -------------------------------------------------------------------------------- main
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--satellite", default="S1A")
+    parser.add_argument("--workers", type=int, default=8)
+    args = parser.parse_args()
+    OUT.mkdir(parents=True, exist_ok=True)
+    model = json.loads((processed_dir() / f"model_{args.satellite}.json").read_text())
+    template = np.asarray(model["template"]["values"]["a"])
+    mans = pd.read_parquet(processed_dir() / f"manoeuvres_{args.satellite}.parquet")
+    ops, split = pd.Timestamp(model["operational_start"]), pd.Timestamp(model["split"])
+
+    win = select_windows(mans, ops, split, mans["stop"].max(), args.satellite, args.workers)
+    cal = calibrate_lab_detector(win, mans, template)
+    grid, grid_min = run_injection_grid(win, template, cal["det"], args.workers)
+    presets, sweep = presets_and_sweep(win, mans, template, cal["det"], grid_min)
+    export_grid(grid, grid_min, presets, cal["det"], template)
+    fig_heatmaps(grid, OUT / "heatmaps_presets.png")
+    fig_min_dv(grid_min, OUT / "robustness_curve.png")
+    report = render_report(win, cal, presets, grid_min, sweep, ops, split)
+    (OUT / "robustness.md").write_text(report, encoding="utf-8")
+    print(report)
 
 
 if __name__ == "__main__":

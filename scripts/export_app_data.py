@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import gzip
+import hashlib
 import json
 from concurrent.futures import ProcessPoolExecutor
 
@@ -94,7 +95,13 @@ def build_events(sat: str, model: dict) -> pd.DataFrame:
     prefix = {"detected": "D", "false_alarm": "F", "missed": "M", "unscored": "U"}
     events.insert(0, "id", [f"{sat}-{prefix[k]}{o}" for k, o in
                             zip(events["kind"], events["orbit"], strict=True)])
+    duplicated = events["id"][events["id"].duplicated()]
+    if len(duplicated):
+        raise ValueError(f"duplicate event ids: {sorted(duplicated)[:5]}")
     events["esa_da_m"] = events["dv_esa_mm_s"] * 1e-3 / dv_from_da(1.0)
+    # For detections the class is the rule prediction; for missed manoeuvres it is the
+    # ESA-derived type (there is no detection to classify).
+    events["class_source"] = np.where(events["kind"] == "missed", "esa", "rule")
     return events
 
 
@@ -138,14 +145,41 @@ def _lab_window(args):
     return out
 
 
-def export_lab(sat: str, chosen: pd.DataFrame, model: dict, grid: dict, workers: int) -> None:
+def lab_manifest(model: dict, grid: dict) -> dict:
+    """Everything a cached lab window depends on besides the raw orbits."""
+    config = {"template_a": model["template"]["values"]["a"], "detector": grid["detector"],
+              "step_s": lab.STEP_S * LAB_STEP, "window_days": WINDOW_DAYS}
+    digest = hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()
+    return {"config_sha256": digest, "step_s": config["step_s"], "window_days": WINDOW_DAYS}
+
+
+def export_lab(sat: str, chosen: pd.DataFrame, model: dict, grid: dict, workers: int,
+               force: bool = False) -> None:
+    """Build missing lab windows; rebuild all of them if their configuration changed."""
     mans = pd.read_parquet(processed_dir() / f"manoeuvres_{sat}.parquet")
     all_files = orbit_files(raw_dir("poeorb", sat), sat)
     vstarts = np.array([validity_start(p) for p in all_files])
+    manifest_path = app_dir() / "lab" / f"_manifest_{sat}.json"
+    manifest = lab_manifest(model, grid)
+    if manifest_path.exists():
+        stale = json.loads(manifest_path.read_text())["config_sha256"] != manifest["config_sha256"]
+    else:
+        # No manifest yet: compare with the configuration embedded in an existing window.
+        existing = sorted((app_dir() / "lab").glob(f"{sat}-*.json.gz"))[:1]
+        stale = bool(existing)
+        if existing:
+            with gzip.open(existing[0], "rt", encoding="utf-8") as fh:
+                sample = json.load(fh)
+            stale = (sample["template_a"] != model["template"]["values"]["a"]
+                     or sample["detector"] != grid["detector"]
+                     or sample["step_s"] != manifest["step_s"])
+    stale = stale or force
+    if stale:
+        print("lab window configuration changed (or --force): rebuilding every window")
     jobs = []
     for _, event in chosen.iterrows():
         out = app_dir() / "lab" / f"{event['id']}.json.gz"
-        if out.exists():
+        if out.exists() and not stale:
             continue
         center = pd.Timestamp(event["time"])
         start = (center - pd.Timedelta(days=WINDOW_DAYS / 2)).floor("h")
@@ -159,12 +193,14 @@ def export_lab(sat: str, chosen: pd.DataFrame, model: dict, grid: dict, workers:
         for n, _ in enumerate(pool.map(_lab_window, jobs, chunksize=2), 1):
             if n % 50 == 0:
                 print(f"  {n}/{len(jobs)}", flush=True)
-
-
-def _noise(values: np.ndarray) -> float:
-    d = np.diff(values)
-    d = d[np.isfinite(d)]
-    return float(1.4826 * np.median(np.abs(d - np.median(d))))
+    manifest_path.write_text(json.dumps(manifest, indent=2))
+    # Windows of this satellite's events that no longer exist (detector changed) go.
+    keep = {f"{i}.json.gz" for i in chosen["id"]}
+    orphans = [p for p in (app_dir() / "lab").glob(f"{sat}-*.json.gz") if p.name not in keep]
+    for path in orphans:
+        path.unlink()
+    if orphans:
+        print(f"removed {len(orphans)} windows of events that no longer exist")
 
 
 def build_metrics(sat: str) -> dict:
@@ -174,20 +210,24 @@ def build_metrics(sat: str) -> dict:
     model = json.loads((processed_dir() / f"model_{sat}.json").read_text())
     ops = model["operational_start"]
     template = model["template"]["values"]
-    s = series[series["valid"] & (series["t"] >= ops)]
-    s = s[np.diff(s.index.to_numpy(), prepend=s.index[0] - 1) == 1]  # consecutive orbits
+    noise = step3["noise"]  # same numbers as the step 3 report
     return {
         "satellite": sat,
         "detector": step3["cusum_config"],
         "test": step3["test"],
         "comparison": step3["comparison"],
-        "noise_m": {"raw": _noise(s["a"].to_numpy()), "template": _noise(s["a_c"].to_numpy())},
+        "noise_m": {"raw": noise["a_raw_m"], "template": noise["a_corrected_m"]},
+        "noise_scope": noise["scope"],
+        "observe_window": step3["observe_window"],
         "model": {
             "operational_start": ops, "split": model["split"],
+            "coverage_end": str(pd.read_parquet(
+                processed_dir() / f"manoeuvres_eval_{sat}.parquet")["stop"].max().date()),
             "repeat_revolutions": model["template"]["repeat"],
             "template_ptp_a_m": float(np.ptp(template["a"])),
             "template_ptp_i_mdeg": float(np.ptp(template["i"]) * np.rad2deg(1.0) * 1e3),
             "drag_beta": model["drag"]["beta"],
+            "drag_2024_ratio": step3.get("drag_2024_ratio"),
             "sigma": model["sigma"],
         },
         "revolutions": int(len(series[series["valid"]])),
@@ -214,6 +254,7 @@ def main() -> None:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--satellite", default="S1A")
     parser.add_argument("--workers", type=int, default=6)
+    parser.add_argument("--force", action="store_true", help="rebuild every lab window")
     args = parser.parse_args()
     sat = args.satellite
     out = app_dir()
@@ -234,7 +275,7 @@ def main() -> None:
     events = build_events(sat, model)
     chosen = lab_events(events)
     default_id = default_lab_event(events)
-    export_lab(sat, chosen, model, grid, args.workers)
+    export_lab(sat, chosen, model, grid, args.workers, args.force)
     present = {p.name.removesuffix(".json.gz") for p in (out / "lab").glob("*.json.gz")}
     events["lab_available"] = events["id"].isin(present & set(chosen["id"]))
     events.to_parquet(out / f"events_{sat}.parquet", index=False)

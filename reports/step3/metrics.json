@@ -14,52 +14,67 @@
   "test": {
     "manoeuvres": 414,
     "observable": 414,
-    "tp": 399,
-    "fn": 15,
-    "fp": 91,
+    "tp": 398,
+    "fn": 16,
+    "fp": 76,
     "duplicates": 14,
-    "recall": 0.9637681159420289,
-    "precision": 0.8142857142857143,
-    "f1": 0.8827433628318583,
-    "dv_abs_err_median_mm_s": 0.45456746413054,
-    "dv_rel_err_median": 0.09553401667169407,
-    "delay_median_h": 3.2503111111111114
+    "recall": 0.961352657004831,
+    "precision": 0.8396624472573839,
+    "f1": 0.8963963963963965,
+    "dv_abs_err_median_mm_s": 0.45646482499784363,
+    "dv_rel_err_median": 0.09620535947341385,
+    "delay_median_h": 3.2665169444444446
   },
   "comparison": [
     {
       "detector": "Baseline, raw series (step 2, W=6, z=3)",
       "calibration recall": 0.45267489711934156,
-      "calibration precision": 0.8270676691729323,
-      "calibration f1": 0.5851063829787233,
+      "calibration precision": 0.8333333333333334,
+      "calibration f1": 0.5866666666666666,
       "test recall": 0.6690821256038647,
       "test precision": 0.9295302013422819,
       "test f1": 0.7780898876404494,
       "test \u0394v err [mm/s]": 0.8745776998496639,
-      "test delay [h]": 6.646317777777777
+      "test delay [h]": 6.646317777777777,
+      "causal delay": false
     },
     {
       "detector": "Baseline, template-corrected (W=12, z=4)",
       "calibration recall": 0.9506172839506173,
-      "calibration precision": 0.9788135593220338,
-      "calibration f1": 0.964509394572025,
+      "calibration precision": 0.9829787234042553,
+      "calibration f1": 0.9665271966527197,
       "test recall": 0.7971014492753623,
       "test precision": 0.9880239520958084,
       "test f1": 0.8823529411764706,
       "test \u0394v err [mm/s]": 0.3994797067771363,
-      "test delay [h]": 7.214399722222222
+      "test delay [h]": 7.214399722222222,
+      "causal delay": false
     },
     {
       "detector": "Main: template + drag + CUSUM",
-      "calibration recall": 0.9465020576131687,
-      "calibration precision": 0.9311740890688259,
-      "calibration f1": 0.9387755102040817,
-      "test recall": 0.9637681159420289,
-      "test precision": 0.8142857142857143,
-      "test f1": 0.8827433628318583,
-      "test \u0394v err [mm/s]": 0.45456746413054,
-      "test delay [h]": 3.2503111111111114
+      "calibration recall": 0.9506172839506173,
+      "calibration precision": 0.9390243902439024,
+      "calibration f1": 0.9447852760736196,
+      "test recall": 0.961352657004831,
+      "test precision": 0.8396624472573839,
+      "test f1": 0.8963963963963965,
+      "test \u0394v err [mm/s]": 0.45646482499784363,
+      "test delay [h]": 3.2665169444444446,
+      "causal delay": true
     }
   ],
-  "classification_rule_macro_f1": 0.7618720481128282,
-  "classification_model_macro_f1": 0.7213902777674078
+  "observe_window": 12,
+  "drag_2024_ratio": {
+    "power_law": 0.9514297473190587,
+    "exponential": 1.825997192600702
+  },
+  "noise": {
+    "a_raw_m": 4.48238690156322,
+    "a_corrected_m": 0.20204780042767523,
+    "i_raw_mdeg": 1.5767629180290328,
+    "i_corrected_mdeg": 0.022885569155591656,
+    "scope": "quiet revolutions of the calibration period"
+  },
+  "classification_rule_macro_f1": 0.7524885693528645,
+  "classification_model_macro_f1": 0.7569196362451494
 }

@@ -6,10 +6,10 @@
 import { useEffect, useRef, useState } from "react";
 
 import type { LabWindow } from "../api/client";
-import type { LabParams, LabResult } from "./runLab";
+import type { LabConfig, LabParams, LabResult } from "./runLab";
 
 export function useLab(window: LabWindow | undefined, realDvMmS: number | null,
-                       params: LabParams) {
+                       params: LabParams, config: LabConfig) {
   const worker = useRef<Worker | null>(null);
   const latest = useRef(0);
   const frame = useRef<number | null>(null);
@@ -36,9 +36,13 @@ export function useLab(window: LabWindow | undefined, realDvMmS: number | null,
 
   useEffect(() => {
     if (!window || !worker.current) return;
+    // Invalidate any answer still in flight for the previous window.
+    latest.current += 1;
     setReady(false);
     setResult(null);
-    worker.current.postMessage({ type: "load", window, realDvMmS });
+    setRealDv(null);
+    worker.current.postMessage({ type: "load", window, realDvMmS, config });
+    // config is derived from the robustness grid, stable for the page's lifetime.
   }, [window, realDvMmS]);
 
   useEffect(() => {

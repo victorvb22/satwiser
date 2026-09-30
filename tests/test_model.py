@@ -98,3 +98,35 @@ def test_rule_classes():
     x = pd.DataFrame({"da": [15.0, -8.0, 2.0, 0.5], "abs_di": [0.0, 0.0, 0.5, 0.01]})
     assert list(rule(x, di_threshold_mdeg=0.2, da_threshold_m=1.5)) == [
         "station_keeping", "orbit_change", "orbit_change", "unexplained"]
+
+
+def test_cusum_adaptive_scale_absorbs_a_variance_change():
+    rng = np.random.default_rng(5)
+    y = np.concatenate([0.2 * rng.standard_normal(600), 1.0 * rng.standard_normal(600)])
+    valid = np.ones(len(y), bool)
+    fixed = run_cusum([Channel("a", y, 0.2, "mean")], valid,
+                      CusumConfig(kappa=2.0, h=12.0, memory=20, clip=6.0))
+    adaptive = run_cusum([Channel("a", y, 0.2, "mean")], valid,
+                         CusumConfig(kappa=2.0, h=12.0, memory=20, clip=6.0, scale_window=200))
+    assert len(fixed) > 5
+    assert len(adaptive) <= 1
+
+
+def test_cusum_linear_predictor_follows_a_drift():
+    rng = np.random.default_rng(6)
+    y = 0.05 * np.arange(800) + 0.2 * rng.standard_normal(800)
+    y[400:] += 3.0
+    alarms = run_cusum([Channel("a", y, 0.2, "linear")], np.ones(800, bool),
+                       CusumConfig(kappa=2.0, h=12.0, memory=30, clip=6.0))
+    assert list(alarms["change_pos"]) == [400]
+
+
+def test_cusum_multichannel_alarm_on_the_right_channel():
+    rng = np.random.default_rng(7)
+    a = 0.2 * rng.standard_normal(1000)
+    i = 0.02 * rng.standard_normal(1000)
+    i[600:] += 0.3
+    alarms = run_cusum([Channel("a", a, 0.2, "mean"), Channel("i", i, 0.02, "linear")],
+                       np.ones(1000, bool), CusumConfig(kappa=2.0, h=12.0, memory=20, clip=6.0))
+    assert list(alarms["channel"]) == ["i"]
+    assert alarms["change_pos"].iloc[0] == 600

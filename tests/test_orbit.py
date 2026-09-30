@@ -109,3 +109,17 @@ def test_plain_average_suffers_boundary_jitter():
     el = synthetic_elements(da_burn=0.0).drop(columns="a_nosp")
     jumps = revolution_means(el)["a"].diff().dropna()
     assert jumps.abs().max() > 3.0
+
+
+def test_streaming_revolutions_match_single_pass():
+    from satwiser.pipeline.series import stream_revolutions
+
+    el = synthetic_elements(n_rev=30, burn_rev=12)
+    el["orbit"] = revolution_ids(el["u"].to_numpy()) + 5000
+    el["pod_flag"] = False
+    # Chunks cut in the middle of revolutions, as consecutive daily files would be.
+    cuts = [0, 1234, 4000, 4001, 9876, 13000, len(el)]
+    chunks = [el.iloc[a:b] for a, b in zip(cuts[:-1], cuts[1:], strict=True)]
+    streamed = stream_revolutions(iter(chunks), chunk_files=2, verbose=False)
+    single = revolution_means(el, trim_edges=False)
+    pd.testing.assert_frame_equal(streamed, single)

@@ -4,10 +4,10 @@
  * Only the latest request matters; the page drops stale answers by id.
  */
 import type { LabWindow } from "../api/client";
-import { prepare, runLab, type LabParams, type PreparedWindow } from "./runLab";
+import { prepare, runLab, type LabConfig, type LabParams, type PreparedWindow } from "./runLab";
 
 export type WorkerRequest =
-  | { type: "load"; window: LabWindow; realDvMmS: number | null }
+  | { type: "load"; window: LabWindow; realDvMmS: number | null; config: LabConfig }
   | { type: "run"; id: number; params: LabParams };
 
 let prepared: PreparedWindow | null = null;
@@ -15,7 +15,7 @@ let prepared: PreparedWindow | null = null;
 self.onmessage = (event: MessageEvent<WorkerRequest>) => {
   const msg = event.data;
   if (msg.type === "load") {
-    prepared = prepare(msg.window, msg.realDvMmS);
+    prepared = prepare(msg.window, msg.realDvMmS, msg.config);
     self.postMessage({ type: "loaded", realDvMmS: prepared.realDvMmS });
   } else if (msg.type === "run" && prepared) {
     const t0 = performance.now();

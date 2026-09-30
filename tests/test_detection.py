@@ -109,3 +109,12 @@ def test_evaluation_counts():
     assert s["recall"] == pytest.approx(2 / 3)
     assert s["precision"] == pytest.approx(2 / 3)
     assert m.loc[0, "delay_h"] > 0
+
+    # A period starting inside manoeuvre 0's tolerance window: its detection belongs to
+    # that manoeuvre (outside the period), so it is neither a false alarm nor a match.
+    m_p, d_p = evaluate(det, mans, revs, window=cfg.window,
+                        start=str(mans.loc[0, "start"] + pd.Timedelta(minutes=1)))
+    s_p = summary(m_p, d_p)
+    assert (s_p["tp"], s_p["fn"], s_p["fp"]) == (1, 1, 1)
+    matched = d_p["manoeuvre"] >= 0
+    assert d_p.loc[matched, "manoeuvre"].isin(m_p.index).all()

@@ -1,0 +1,21 @@
+{
+  "written": "2026-09-30T14:26:14+00:00",
+  "esa": {
+    "s1a.man": "7ce1f6052eb3aa3d97c199527ca392c6ce150df0339429546beb982b05a9e579",
+    "s1a.mhf": "7a6311600330bcecf272484b1457eff009d390ed4a31cf7d5877c280f0d7fa07",
+    "s1a.out": "b3124688a3d1d6dbf33c2dc491de483122da51376585a1049ff3c42838f8de0b",
+    "s1c.man": "22417b10146ecd5c20a8ae0d49e4553291ee8c14b65bd6d0e8613cbca4fcf944",
+    "s1c.mhf": "2b7c6e09223237ef5bef7d6696a93ed4aa6c17323f49e72f0f502d335440e2cc",
+    "s1c.out": "3edb809f84065fd921e5c1d99d90be70392b5a9f9d1945dd80a220e2155a042b"
+  },
+  "spaceweather": {
+    "Kp_ap_Ap_SN_F107_since_1932.txt": "07221ff2c7f7e49268a25cd4ba0d71554081a7df53d785ed01e58135f008bd06"
+  },
+  "poeorb": {
+    "satellite": "S1A",
+    "files": 4464,
+    "first": "S1A_OPER_AUX_POEORB_OPOD_20210301T130653_V20140406T225944_20140408T005944.EOF",
+    "last": "S1A_OPER_AUX_POEORB_OPOD_20260720T070517_V20260629T225942_20260701T005942.EOF",
+    "names_sha256": "7391978332c437f979230366de0eeb0021e4256a7b87ae8e854f74228dde7dd8"
+  }
+}

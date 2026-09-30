@@ -2,7 +2,9 @@ name: Keep-alive
 
 # Supabase pauses free projects after a week without activity. The API health check runs
 # a query against the database, so pinging it every three days keeps the project awake
-# (and wakes the Render service). Set the repository secret API_HEALTH_URL, e.g.
+# (and wakes the Render service). GitHub disables scheduled workflows after 60 days
+# without repository activity: re-enable it from the Actions tab if that happens.
+# Set the repository secret API_HEALTH_URL, e.g.
 # https://satwiser-api.onrender.com/api/health.
 
 on:

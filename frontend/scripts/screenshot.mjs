@@ -11,7 +11,7 @@ const page = await browser.newPage();
 const errors = [];
 page.on("pageerror", (e) => errors.push(String(e)));
 page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
-await page.goto(url, { waitUntil: "networkidle0" });
+await page.goto(url, { waitUntil: "networkidle2" });
 if (waitFor) await page.waitForSelector(waitFor, { timeout: 20000 });
 if (clickText) {
   const buttons = await page.$$("button");

@@ -127,8 +127,8 @@ def degrade(states: np.ndarray, deg: Degradation, normals: np.ndarray) -> np.nda
     """
     if deg.sigma_m == 0:
         return states.copy()
-    a = np.linalg.norm(states[:, :3], axis=1).mean()
-    n = np.sqrt(MU_EARTH / a**3)
+    r_mean = np.linalg.norm(states[:, :3], axis=1).mean()
+    n = np.sqrt(MU_EARTH / r_mean**3)
     err = ar1(normals, deg.rho) * deg.sigma_m
     err[:, 3:] *= n
     return states + err
@@ -194,20 +194,29 @@ def window_scores(means: np.ndarray, window: int, normalisation: str = "window",
     and gaps (fewer bins) are scored correctly.
     """
     n = len(means)
+    min_count = max(1, (window + 1) // 2)
+    # Windowed sums through cumulative sums (same formulas as the per-position loop of the
+    # TypeScript twin, equal to rounding). Values are centred first to keep the sums small.
+    valid_mask = ~np.isnan(means)
+    offset = means[valid_mask][0] if valid_mask.any() else 0.0
+    vals = np.where(valid_mask, means - offset, 0.0)
+    pos = np.arange(n, dtype=float)
+    c_n = np.concatenate(([0.0], np.cumsum(valid_mask)))
+    c_v = np.concatenate(([0.0], np.cumsum(vals)))
+    c_p = np.concatenate(([0.0], np.cumsum(np.where(valid_mask, pos, 0.0))))
+    k = np.arange(n)
+    b_lo, b_hi = np.maximum(0, k - window), k
+    a_lo, a_hi = k + 1, np.minimum(n, k + 1 + window)
+    n_b = c_n[b_hi] - c_n[b_lo]
+    n_a = c_n[a_hi] - c_n[a_lo]
+    ok = (n_b >= min_count) & (n_a >= min_count)
     d = np.full(n, np.nan)
     gap = np.full(n, np.nan)
     inv = np.full(n, np.nan)
-    min_count = max(1, (window + 1) // 2)
-    positions = np.arange(n)
-    for k in range(n):
-        lo, hi = max(0, k - window), min(n, k + 1 + window)
-        b_idx = positions[lo:k][~np.isnan(means[lo:k])]
-        a_idx = positions[k + 1:hi][~np.isnan(means[k + 1:hi])]
-        if len(b_idx) >= min_count and len(a_idx) >= min_count:
-            d[k] = means[a_idx].mean() - means[b_idx].mean()
-            gap[k] = a_idx.mean() - b_idx.mean()
-            inv[k] = 1.0 / len(b_idx) + 1.0 / len(a_idx)
-    ok = ~np.isnan(d)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        d[ok] = ((c_v[a_hi] - c_v[a_lo]) / n_a - (c_v[b_hi] - c_v[b_lo]) / n_b)[ok]
+        gap[ok] = ((c_p[a_hi] - c_p[a_lo]) / n_a - (c_p[b_hi] - c_p[b_lo]) / n_b)[ok]
+        inv[ok] = (1.0 / n_b + 1.0 / n_a)[ok]
     z = np.full(n, np.nan)
     if ok.sum() < MIN_BINS:
         return d, z
@@ -247,16 +256,33 @@ def detector_window(det: LabDetector, revs_per_bin: int) -> int:
     return max(2, int(np.floor(det.window_revs / revs_per_bin + 0.5)))
 
 
-def analyse(states: pd.DataFrame, template: np.ndarray, deg: Degradation, det: LabDetector,
-            rng: np.random.Generator, phase: int = 0) -> dict:
-    """Degrade a window and run the lab detector (offline convenience wrapper)."""
+def degraded_means(states: pd.DataFrame, template: np.ndarray, deg: Degradation,
+                   rng: np.random.Generator, phase: int = 0) -> dict:
+    """Degrade a window and average it per bin (independent of the detector settings).
+
+    Returns the bin means, the revolutions per bin, the sampled indices and the first
+    sampled orbit, which is the origin of the bin indices.
+    """
     idx = subsample(len(states), deg.points_per_day, phase)
     raw = states[["rx", "ry", "rz", "vx", "vy", "vz"]].to_numpy()[idx]
     noisy = degrade(raw, deg, rng.standard_normal(raw.shape))
     b = bin_revolutions(deg.points_per_day)
-    bins, means = bin_means(mean_a_nosp(noisy), states["orbit"].to_numpy()[idx], template, b,
+    orbit = states["orbit"].to_numpy()[idx]
+    bins, means = bin_means(mean_a_nosp(noisy), orbit, template, b,
                             expected_per_bin(deg.points_per_day, b))
-    w = detector_window(det, b)
-    d, z = window_scores(means, w, det.normalisation, det.floor_m)
-    return {"bins": bins, "means": means, "d": d, "z": z, "revs_per_bin": b, "window": w,
+    return {"bins": bins, "means": means, "revs_per_bin": b, "idx": idx,
+            "first_orbit": int(orbit.min())}
+
+
+def detect_on_means(binned: dict, det: LabDetector) -> dict:
+    """Run the lab detector on the output of :func:`degraded_means`."""
+    w = detector_window(det, binned["revs_per_bin"])
+    d, z = window_scores(binned["means"], w, det.normalisation, det.floor_m)
+    return {**binned, "d": d, "z": z, "window": w,
             "detections": window_detect(z, det.threshold, w)}
+
+
+def analyse(states: pd.DataFrame, template: np.ndarray, deg: Degradation, det: LabDetector,
+            rng: np.random.Generator, phase: int = 0) -> dict:
+    """Degrade a window and run the lab detector (offline convenience wrapper)."""
+    return detect_on_means(degraded_means(states, template, deg, rng, phase), det)

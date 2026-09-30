@@ -197,7 +197,7 @@ export function binMeans(a: Float64Array, orbit: Int32Array, template: ArrayLike
 
 // ------------------------------------------------------------------------ detection
 
-function median(values: number[]): number {
+export function median(values: number[]): number {
   const s = [...values].sort((x, y) => x - y);
   const h = Math.floor(s.length / 2);
   return s.length % 2 ? s[h] : (s[h - 1] + s[h]) / 2;

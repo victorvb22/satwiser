@@ -160,12 +160,16 @@ interface ChartProps {
 
 function SeriesChart({ range, series, events, selected, onSelect, animate }: ChartProps) {
   const x = scaleLinear().domain(range).range([0, W]);
-  const valid = series.a.filter((v): v is number => v !== null);
-  const centre = valid.length ? [...valid].sort((p, q) => p - q)[Math.floor(valid.length / 2)] : 0;
-  const rel = series.a.map((v) => (v === null ? null : v - centre));
-  const span = niceSpan(rel.filter((v): v is number => v !== null));
+  // Sorting and downsampling depend on the data only, not on the selected marker.
+  const { rel, span, reduced } = useMemo(() => {
+    const valid = series.a.filter((v): v is number => v !== null);
+    const centre = valid.length
+      ? [...valid].sort((p, q) => p - q)[Math.floor(valid.length / 2)] : 0;
+    const relative = series.a.map((v) => (v === null ? null : v - centre));
+    return { rel: relative, span: niceSpan(relative.filter((v): v is number => v !== null)),
+             reduced: lttb(series.t, relative, 1600) };
+  }, [series]);
   const y = scaleLinear().domain([-span, span]).range([H - 6, 6]);
-  const reduced = lttb(series.t, rel, 1600);
   const path = line<number>().x((_, k) => x(reduced.x[k])).y((v) => y(v))(reduced.y) ?? "";
   const byOrbit = new Map(series.orbit.map((o, k) => [o, rel[k]]));
   const valueNear = (orbit: number, after: boolean) => {
@@ -534,7 +538,8 @@ function MissionView({ sat }: { sat: Satellite }) {
           </div>
           {range[0] < opsStart && (
             <p className="faint" style={{ fontSize: 12, margin: 0 }}>
-              Avant août 2014 : acquisition de l’orbite de référence, hors évaluation.
+              Avant le {dateFr(sat.operational_start)} : acquisition de l’orbite de référence,
+              hors évaluation.
             </p>
           )}
         </div>
@@ -547,7 +552,7 @@ function MissionView({ sat }: { sat: Satellite }) {
             <p className="faint" style={{ margin: 0, fontSize: 12, lineHeight: 1.5 }}>
               Détecteur principal (CUSUM), évalué contre l’historique de manœuvres ESA.
               Test : {sat.summary.by_split.test.detected} détectées sur{" "}
-              {sat.summary.by_split.test.esa_manoeuvres} depuis 2020.
+              {sat.summary.by_split.test.esa_manoeuvres} depuis le {dateFr(sat.split)}.
             </p>
           </div>
         </aside>

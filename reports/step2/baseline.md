@@ -28,17 +28,18 @@ Revolution-to-revolution noise of the mean semi-major axis (robust σ of consecu
 
 ## Calibration (2014-04-01 to 2020-01-01, exclusive end)
 
+- This period includes the orbit-acquisition phase (before 2014-08-01); step 3 excludes it, so its calibration scores of this baseline differ slightly.
 - Grid: window W in [2, 4, 6, 8, 12, 16] revolutions, threshold in [2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 7.0, 8.0]. Selected by F1: **W = 6, threshold = 3**.
 - Reference (W = 2, z = 5, closest to single-revolution jumps): recall 0.148, precision 1.000, F1 0.257.
 - Selected configuration on calibration: recall 0.471, precision 0.862, F1 0.609.
 
-## Test (2020-01-01 to 2026-06-30)
+## Test (2020-01-01 to 2026-06-13, end of the ESA record)
 
-- Manoeuvres: 414 (414 observable). TP 277, FN 137, false alarms 22 (duplicates inside a manoeuvre window: 0).
-- **Recall 0.669, precision 0.926, F1 0.777.**
-- In-plane manoeuvres only (inclination manoeuvres excluded: they leave the semi-major axis unchanged by design): recall 0.675, precision 0.916, F1 0.777.
+- Manoeuvres: 414 (414 observable). TP 277, FN 137, false alarms 21 (duplicates inside a manoeuvre window: 0).
+- **Recall 0.669, precision 0.930, F1 0.778.**
+- In-plane manoeuvres only (inclination manoeuvres excluded: they leave the semi-major axis unchanged by design): recall 0.675, precision 0.920, F1 0.779.
 - Δv estimate (Δv = Δa v / 2a) on detected station-keeping manoeuvres: median absolute error 0.87 mm/s, median relative error 11 %.
-- Detection delay (causal reading, alarm available once W revolutions follow the manoeuvre): median 6.6 h (one revolution = 98.5 min).
+- Detection delay (orbit time from the manoeuvre start to the end of the W revolutions the alarm needs): median 6.6 h (one revolution = 98.5 min). Indicative only: the rolling normalisation is centred (about 15 days on each side), so this detector is not causal, and the delay excludes the publication latency of the precise orbits (about three weeks).
 
 ### Recall by manoeuvre type (test)
 
