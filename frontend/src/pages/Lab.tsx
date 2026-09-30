@@ -126,12 +126,13 @@ function Heatmap({ grid, sigma, dvMm, points, rho }: { grid: Robustness; sigma: 
   const cols = grid.axes.sigma_m.length;
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginTop: 18 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline",
+                    flexWrap: "wrap", gap: "4px 12px", marginTop: 18 }}>
         <span className="label">Carte de robustesse · probabilité de détection</span>
         <span className="axis-label" style={{ position: "static" }}>cadre orange = réglage actuel</span>
       </div>
       <div className="heatmap" role="table" aria-label="Probabilité de détection selon le bruit et le Δv"
-           style={{ gridTemplateColumns: `64px repeat(${cols}, minmax(0, 1fr))`, marginTop: 10 }}>
+           style={{ gridTemplateColumns: `var(--axis-w) repeat(${cols}, minmax(0, 1fr))`, marginTop: 10 }}>
         {rows.map((di) => (
           <div key={di} role="row" style={{ display: "contents" }}>
             <span className="axis" role="rowheader">{dv(grid.axes.dv_cm_s[di] * 10)}</span>
@@ -152,7 +153,8 @@ function Heatmap({ grid, sigma, dvMm, points, rho }: { grid: Robustness; sigma: 
         <span />
         {grid.axes.sigma_m.map((s) => <span key={s} className="col-label">{length(s)}</span>)}
       </div>
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginTop: 6 }} className="faint">
+      <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "4px 12px",
+                    fontSize: 11, marginTop: 6 }} className="faint">
         <span>Δv (vertical) · bruit de position (horizontal) · {grid.trials_per_cell} essais par case</span>
         <span>moins précis →</span>
       </div>
@@ -272,25 +274,29 @@ function LabView({ eventId, grid }: { eventId: string; grid: Robustness }) {
           </div>
         </aside>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }} className="label">
-            <span>
-              {event.data ? `${KIND_LABEL[event.data.kind]} · ${dateFr(event.data.time)}` : "…"}
-              {event.data?.class && event.data.kind === "detected" && ` · ${CLASS_LABEL[event.data.class]}`}
-            </span>
-            <span className="mono">
-              {result ? `1 point = ${result.revsPerBin === 1 ? "1 révolution" : `${result.revsPerBin} révolutions`} · ${num(result.nSamples, 0)} états` : ""}
-            </span>
+        {/* On phones the children are reordered (chart first, pinned) by the stylesheet. */}
+        <div className="lab-main">
+          <div className="lab-chart">
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }} className="label">
+              <span>
+                {event.data ? `${KIND_LABEL[event.data.kind]} · ${dateFr(event.data.time)}` : "…"}
+                {event.data?.class && event.data.kind === "detected" && ` · ${CLASS_LABEL[event.data.class]}`}
+              </span>
+              <span className="mono">
+                {result ? `1 point = ${result.revsPerBin === 1 ? "1 révolution" : `${result.revsPerBin} révolutions`} · ${num(result.nSamples, 0)} états` : ""}
+              </span>
+            </div>
+            {result ? <LabChart result={result} /> : windowQuery.isError
+              ? <ErrorNote>Fenêtre indisponible.</ErrorNote>
+              : <div className="skeleton" style={{ aspectRatio: `${W} / ${H}` }} />}
+            <div className="months"><span>J0</span><span>J2</span><span>J4</span><span>J6</span><span>J8</span><span>J10</span></div>
           </div>
-          {result ? <LabChart result={result} /> : windowQuery.isError
-            ? <ErrorNote>Fenêtre indisponible.</ErrorNote>
-            : <div className="skeleton" style={{ aspectRatio: `${W} / ${H}` }} />}
-          <div className="months"><span>J0</span><span>J2</span><span>J4</span><span>J6</span><span>J8</span><span>J10</span></div>
-          <label className="label" style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <label className="label lab-event" style={{ display: "flex", gap: 10, alignItems: "center" }}>
             Événement
             <select value={eventId} onChange={(e) => navigate(`/labo/${e.target.value}`)}
                     style={{ background: "var(--bg)", color: "var(--text)", border: "1px solid var(--border)",
-                             borderRadius: 8, padding: "6px 10px", fontFamily: "var(--mono)", fontSize: 12 }}>
+                             borderRadius: 8, padding: "6px 10px", fontFamily: "var(--mono)", fontSize: 12,
+                             flex: "0 1 auto", minWidth: 0, maxWidth: "100%" }}>
               {labEvents.length === 0 && <option value={eventId}>{eventId}</option>}
               {byYear.map(([year, list]) => (
                 <optgroup key={year} label={year}>
@@ -304,8 +310,10 @@ function LabView({ eventId, grid }: { eventId: string; grid: Robustness }) {
               ))}
             </select>
           </label>
-          <Heatmap grid={grid} sigma={sigma} dvMm={dvMm} points={points} rho={rho} />
-          <p className="faint" style={{ fontSize: 12, lineHeight: 1.5, margin: 0 }}>
+          <div className="lab-map">
+            <Heatmap grid={grid} sigma={sigma} dvMm={dvMm} points={points} rho={rho} />
+          </div>
+          <p className="faint lab-note" style={{ fontSize: 12, lineHeight: 1.5, margin: 0 }}>
             La série est recalculée dans le navigateur à partir d’états réels (1 point par minute) :
             dégradation, moyenne par révolution, détecteur. La carte et le chiffre clé viennent
             d’une grille précalculée hors ligne sur des fenêtres calmes (manœuvre isolée).

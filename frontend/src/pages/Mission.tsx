@@ -291,8 +291,11 @@ function OverviewStrip({ sat, range, onDraft, onCommit }: OverviewProps) {
 
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     const t = timeAt(e.clientX);
-    const tol = EDGE_PX / pxPerMs();
     const [t0, t1] = range;
+    // Fingers need a wider edge zone; a third of the window stays free for moving it.
+    const edgePx = e.pointerType === "touch"
+      ? Math.max(EDGE_PX, Math.min(20, ((t1 - t0) * pxPerMs()) / 3)) : EDGE_PX;
+    const tol = edgePx / pxPerMs();
     let mode: DragMode = "move";
     let start = range;
     if (Math.abs(t - t0) <= tol) mode = "left";

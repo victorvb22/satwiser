@@ -281,6 +281,7 @@ export default function Method() {
             {model ? ` (avant le ${dateFr(model.operational_start)})` : ""} est exclue.
           </p>
           {m && (
+            <div className="table-scroll">
             <table className="metrics">
               <thead>
                 <tr><th>Détecteur (période de test)</th><th>Rappel</th><th>Précision</th><th>F1</th>
@@ -299,6 +300,7 @@ export default function Method() {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
           <p>
             * Délai indicatif : la normalisation des détecteurs de référence utilise une fenêtre
