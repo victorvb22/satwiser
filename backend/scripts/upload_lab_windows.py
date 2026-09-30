@@ -4,8 +4,10 @@ The windows (``$SATWISER_DATA_DIR/app/lab/*.json.gz``, about 0.5 MB each) are to
 for the free database quota; Supabase Storage has its own quota. The bucket is created
 public-read if missing; writes need the service key, which stays on the workstation.
 
-    SUPABASE_URL=https://PROJECT.supabase.co SUPABASE_SERVICE_KEY=... \\
-        python backend/scripts/upload_lab_windows.py
+    python backend/scripts/upload_lab_windows.py
+
+with ``SUPABASE_URL`` and ``SUPABASE_SERVICE_KEY`` in the environment or the local
+``.env`` (never committed).
 
 Then set ``SATWISER_LAB_STORAGE_URL=<SUPABASE_URL>/storage/v1/object/public/lab-windows``
 on the API.
@@ -14,7 +16,6 @@ on the API.
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -23,7 +24,7 @@ import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from satwiser_api.config import load_settings  # noqa: E402
+from satwiser_api.config import get_setting, load_settings  # noqa: E402
 
 BUCKET = "lab-windows"
 
@@ -32,15 +33,20 @@ def main() -> None:
     settings = load_settings()
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--supabase-url", default=os.environ.get("SUPABASE_URL"))
-    parser.add_argument("--service-key", default=os.environ.get("SUPABASE_SERVICE_KEY"))
+    parser.add_argument("--supabase-url", default=get_setting("SUPABASE_URL"))
+    parser.add_argument("--service-key", default=get_setting("SUPABASE_SERVICE_KEY"))
     parser.add_argument("--app-data", type=Path, default=settings.app_data)
     parser.add_argument("--workers", type=int, default=8)
     args = parser.parse_args()
     if not args.supabase_url or not args.service_key:
         parser.error("SUPABASE_URL and SUPABASE_SERVICE_KEY are required")
     base = args.supabase_url.rstrip("/") + "/storage/v1"
-    headers = {"Authorization": f"Bearer {args.service_key}", "apikey": args.service_key}
+    # New-style secret keys (sb_secret_...) are not JWTs: they go in the apikey header
+    # only, and the gateway authorises the request as service_role. Legacy service_role
+    # JWTs are also sent as bearer tokens.
+    headers = {"apikey": args.service_key}
+    if not args.service_key.startswith("sb_"):
+        headers["Authorization"] = f"Bearer {args.service_key}"
 
     existing = requests.get(f"{base}/bucket/{BUCKET}", headers=headers, timeout=30)
     if existing.status_code != 200:

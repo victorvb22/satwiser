@@ -5,6 +5,8 @@ services:
     name: satwiser-api
     runtime: python
     plan: free
+    # Next to the database (Supabase ca-central-1): one short hop per query.
+    region: virginia
     rootDir: backend
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn satwiser_api.main:app --host 0.0.0.0 --port $PORT

@@ -32,7 +32,7 @@ def _dotenv() -> dict[str, str]:
     return values
 
 
-def _get(name: str, default: str | None = None) -> str | None:
+def get_setting(name: str, default: str | None = None) -> str | None:
     return os.environ.get(name) or _dotenv().get(name) or default
 
 
@@ -46,13 +46,13 @@ class Settings:
 
 
 def load_settings() -> Settings:
-    data_dir = _get("SATWISER_DATA_DIR", str(REPO_ROOT / "data"))
-    app_data = Path(_get("SATWISER_APP_DATA", str(Path(data_dir) / "app")))
-    origins = _get("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
+    data_dir = get_setting("SATWISER_DATA_DIR", str(REPO_ROOT / "data"))
+    app_data = Path(get_setting("SATWISER_APP_DATA", str(Path(data_dir) / "app")))
+    origins = get_setting("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
     return Settings(
-        backend=_get("SATWISER_DATA_BACKEND", "local"),
+        backend=get_setting("SATWISER_DATA_BACKEND", "local"),
         app_data=app_data,
-        database_url=_get("DATABASE_URL"),
-        lab_storage_url=_get("SATWISER_LAB_STORAGE_URL"),
+        database_url=get_setting("DATABASE_URL"),
+        lab_storage_url=get_setting("SATWISER_LAB_STORAGE_URL"),
         cors_origins=tuple(o.strip() for o in origins.split(",") if o.strip()),
     )
