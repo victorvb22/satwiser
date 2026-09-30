@@ -8,9 +8,10 @@ same tolerance window are counted as duplicates, not as false alarms.
 A manoeuvre is *observable* when both fitting windows around it hold at least half of
 their revolutions; unobservable ones (data gaps) are reported but excluded from recall.
 
-Detection delay is measured for a causal reading of the detector: the statistic at the
-first orbit ``f`` of the detection run needs revolutions up to ``f + window``, so the
-alarm is available at the end of that orbit.
+Detection delay is measured for a causal reading of the detector. Detections carrying
+an ``alarm_orbit`` (causal detectors such as CUSUM) are available at the end of that
+orbit. For the windowed baseline, the statistic at the first orbit ``f`` of the
+detection run needs revolutions up to ``f + window``.
 """
 
 from __future__ import annotations
@@ -112,7 +113,11 @@ def evaluate(detections: pd.DataFrame, mans: pd.DataFrame, revs: pd.DataFrame,
         m.at[j, "det_orbit"] = d.at[best, "orbit"]
         m.at[j, "jump_m"] = d.at[best, "jump_m"]
         m.at[j, "z"] = d.at[best, "z"]
-        alarm = clock.end_of(np.array([d.at[best, "first_orbit"] + window]))[0]
+        if "alarm_orbit" in d:
+            alarm_orbit = d.at[best, "alarm_orbit"]
+        else:
+            alarm_orbit = d.at[best, "first_orbit"] + window
+        alarm = clock.end_of(np.array([alarm_orbit]))[0]
         m.at[j, "delay_h"] = (alarm - man["start"]).total_seconds() / 3600
     m["dv_est"] = dv_from_da(m["jump_m"])
     m["phase"] = solar_phase(m["start"])
