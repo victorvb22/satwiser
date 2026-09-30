@@ -1,0 +1,1 @@
+"""Satwiser read-only API."""

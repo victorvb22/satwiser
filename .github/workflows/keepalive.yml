@@ -1,0 +1,29 @@
+name: Keep-alive
+
+# Supabase pauses free projects after a week without activity. The API health check runs
+# a query against the database, so pinging it every three days keeps the project awake
+# (and wakes the Render service). Set the repository secret API_HEALTH_URL, e.g.
+# https://satwiser-api.onrender.com/api/health.
+
+on:
+  schedule:
+    - cron: "17 6 */3 * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping API health (retries cover Render's cold start)
+        env:
+          API_HEALTH_URL: ${{ secrets.API_HEALTH_URL }}
+        run: |
+          if [ -z "$API_HEALTH_URL" ]; then
+            echo "API_HEALTH_URL is not set; nothing to ping."
+            exit 0
+          fi
+          for attempt in 1 2 3 4 5; do
+            if curl -fsS --max-time 90 "$API_HEALTH_URL"; then exit 0; fi
+            sleep 30
+          done
+          exit 1

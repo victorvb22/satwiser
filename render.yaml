@@ -1,0 +1,20 @@
+# Render blueprint for the read-only API. Secrets (DATABASE_URL) are set in the Render
+# dashboard, never committed. The front end is deployed separately (Vercel).
+services:
+  - type: web
+    name: satwiser-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn satwiser_api.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      - key: SATWISER_DATA_BACKEND
+        value: database
+      - key: DATABASE_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
