@@ -10,8 +10,9 @@ in by hand. Files:
 - ``events_<SAT>.parquet``: detected manoeuvres, missed manoeuvres and false alarms of
   the main detector, with estimated and ESA Δv, jumps and class;
 - ``robustness.json``: the precomputed degradation grid (step 4);
-- ``lab/<event id>.json.gz``: ten-day windows of inertial states (60 s) for a curated set
-  of events, used by the browser lab.
+- ``lab/<event id>.json.gz``: ten-day windows of inertial states (60 s) around every
+  scored event, used by the browser lab. About 0.5 MB each: in production they live in
+  object storage (Supabase Storage), not in the database.
 
     python scripts/export_app_data.py --satellite S1A
 """
@@ -34,7 +35,6 @@ from satwiser.pipeline.series import orbit_files, validity_start
 
 NAMES = {"S1A": "Sentinel-1A", "S1B": "Sentinel-1B", "S1C": "Sentinel-1C"}
 LAB_STEP = 6  # keep one state every 6 x 10 s = 60 s
-LAB_PER_YEAR = 4
 WINDOW_DAYS = 10
 TYPE_TO_CLASS = {"station_keeping": "station_keeping", "inclination": "orbit_change",
                  "sequence": "orbit_change", "lowering": "orbit_change"}
@@ -98,23 +98,9 @@ def build_events(sat: str, model: dict) -> pd.DataFrame:
     return events
 
 
-def pick_lab_events(events: pd.DataFrame, seed: int = 7) -> pd.DataFrame:
-    """A few events per year for the lab: detected ones of each class, some misses and
-    false alarms. Deterministic."""
-    rng = np.random.default_rng(seed)
-    chosen = []
-    ev = events[events["kind"].isin(["detected", "missed", "false_alarm"])]
-    for _, year in ev.groupby(ev["time"].dt.year):
-        det = year[year["kind"] == "detected"]
-        for cls in ("station_keeping", "orbit_change"):
-            sub = det[det["class"] == cls]
-            if len(sub):
-                chosen.append(sub.iloc[rng.integers(len(sub))])
-        for kind in ("missed", "false_alarm"):
-            sub = year[year["kind"] == kind]
-            if len(sub):
-                chosen.append(sub.iloc[rng.integers(len(sub))])
-    return pd.DataFrame(chosen).drop_duplicates("id")
+def lab_events(events: pd.DataFrame) -> pd.DataFrame:
+    """Events that get a lab window: every scored event shown in the mission view."""
+    return events[events["kind"].isin(["detected", "missed", "false_alarm"])]
 
 
 def default_lab_event(events: pd.DataFrame) -> str:
@@ -158,15 +144,21 @@ def export_lab(sat: str, chosen: pd.DataFrame, model: dict, grid: dict, workers:
     vstarts = np.array([validity_start(p) for p in all_files])
     jobs = []
     for _, event in chosen.iterrows():
+        out = app_dir() / "lab" / f"{event['id']}.json.gz"
+        if out.exists():
+            continue
         center = pd.Timestamp(event["time"])
         start = (center - pd.Timedelta(days=WINDOW_DAYS / 2)).floor("h")
         stop = start + pd.Timedelta(days=WINDOW_DAYS)
         files = [f for f, v in zip(all_files, vstarts, strict=True)
                  if start - pd.Timedelta(days=1) <= v < stop]
-        jobs.append((event, files, model["template"]["values"]["a"], mans, grid["detector"],
-                     app_dir() / "lab" / f"{event['id']}.json.gz"))
+        jobs.append((event, files, model["template"]["values"]["a"], mans, grid["detector"], out))
+    print(f"{len(jobs)} lab windows to build ({len(chosen) - len(jobs)} already present)",
+          flush=True)
     with ProcessPoolExecutor(max_workers=workers) as pool:
-        list(pool.map(_lab_window, jobs))
+        for n, _ in enumerate(pool.map(_lab_window, jobs, chunksize=2), 1):
+            if n % 50 == 0:
+                print(f"  {n}/{len(jobs)}", flush=True)
 
 
 def _noise(values: np.ndarray) -> float:
@@ -240,12 +232,11 @@ def main() -> None:
     daily.rename(columns={"time": "date"}).to_parquet(out / f"daily_{sat}.parquet", index=False)
 
     events = build_events(sat, model)
-    chosen = pick_lab_events(events)
+    chosen = lab_events(events)
     default_id = default_lab_event(events)
-    if default_id not in set(chosen["id"]):
-        chosen = pd.concat([chosen, events[events["id"] == default_id]])
     export_lab(sat, chosen, model, grid, args.workers)
-    events["lab_available"] = events["id"].isin(set(chosen["id"]))
+    present = {p.name.removesuffix(".json.gz") for p in (out / "lab").glob("*.json.gz")}
+    events["lab_available"] = events["id"].isin(present & set(chosen["id"]))
     events.to_parquet(out / f"events_{sat}.parquet", index=False)
 
     (out / "robustness.json").write_text(json.dumps(grid))

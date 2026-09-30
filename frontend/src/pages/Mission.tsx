@@ -405,9 +405,10 @@ function EventCard({ id, satellite }: { id: string | null; satellite: string }) 
       {e.lab_available ? (
         <Link className="button-outline" to={`/labo/${e.id}`}>Tester dans le labo →</Link>
       ) : (
-        <Link className="button-outline" to="/labo" title={`Fenêtre non préchargée pour ${satellite}`}>
-          Labo (événement par défaut) →
-        </Link>
+        <span className="button-outline" aria-disabled="true"
+              title={`Pas de fenêtre de labo pour cet événement de ${satellite}`}>
+          Labo indisponible pour cet événement
+        </span>
       )}
     </div>
   );

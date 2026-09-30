@@ -7,9 +7,12 @@ depend on the storage.
 
 from __future__ import annotations
 
-import gzip
 import json
 import math
+import re
+import urllib.error
+import urllib.request
+from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Protocol
@@ -21,6 +24,7 @@ from satwiser_api import db
 SUMMARY_FIELDS = ("id", "kind", "time", "orbit", "class", "dv_est_mm_s", "dv_esa_mm_s",
                   "da_m", "lab_available")
 KINDS = ("detected", "missed", "false_alarm", "unscored")
+EVENT_ID = re.compile(r"^S1[ABC]-[DFMU]\d{1,7}$")
 
 
 def _clean(value: Any) -> Any:
@@ -53,7 +57,7 @@ class Repository(Protocol):
     def event(self, event_id: str) -> dict | None: ...
     def robustness(self) -> dict | None: ...
     def metrics(self) -> dict | None: ...
-    def lab_window(self, event_id: str) -> dict | None: ...
+    def lab_window_gz(self, event_id: str) -> bytes | None: ...
 
 
 def _series_payload(satellite: str, year: int, rows) -> dict:
@@ -135,19 +139,21 @@ class LocalRepository:
     def metrics(self) -> dict | None:
         return self._documents["metrics"]
 
-    def lab_window(self, event_id: str) -> dict | None:
-        path = self.folder / "lab" / f"{Path(event_id).name}.json.gz"
-        if not path.exists():
+    def lab_window_gz(self, event_id: str) -> bytes | None:
+        if not EVENT_ID.match(event_id):
             return None
-        with gzip.open(path, "rt", encoding="utf-8") as fh:
-            return json.load(fh)
+        path = self.folder / "lab" / f"{event_id}.json.gz"
+        return path.read_bytes() if path.exists() else None
 
 
 class DatabaseRepository:
     """Tables created and filled by ``backend/scripts/load_database.py``."""
 
-    def __init__(self, url: str):
+    def __init__(self, url: str, lab_storage_url: str | None = None, cache_size: int = 24):
         self.engine = db.make_engine(url)
+        self.lab_storage_url = lab_storage_url.rstrip("/") if lab_storage_url else None
+        self._lab_cache: OrderedDict[str, bytes] = OrderedDict()
+        self._cache_size = cache_size
 
     def check(self) -> None:
         with self.engine.connect() as conn:
@@ -207,8 +213,20 @@ class DatabaseRepository:
     def metrics(self) -> dict | None:
         return self._document("metrics")
 
-    def lab_window(self, event_id: str) -> dict | None:
-        with self.engine.connect() as conn:
-            row = conn.execute(select(db.lab_windows.c.payload_gz)
-                               .where(db.lab_windows.c.event_id == event_id)).first()
-        return None if row is None else json.loads(gzip.decompress(row.payload_gz))
+    def lab_window_gz(self, event_id: str) -> bytes | None:
+        """Compressed window fetched from object storage (small in-memory LRU cache)."""
+        if not self.lab_storage_url or not EVENT_ID.match(event_id):
+            return None
+        if event_id in self._lab_cache:
+            self._lab_cache.move_to_end(event_id)
+            return self._lab_cache[event_id]
+        try:
+            with urllib.request.urlopen(f"{self.lab_storage_url}/{event_id}.json.gz",
+                                        timeout=30) as response:
+                payload = response.read()
+        except (urllib.error.HTTPError, urllib.error.URLError, FileNotFoundError):
+            return None
+        self._lab_cache[event_id] = payload
+        if len(self._lab_cache) > self._cache_size:
+            self._lab_cache.popitem(last=False)
+        return payload

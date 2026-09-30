@@ -11,7 +11,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
@@ -33,7 +33,7 @@ def get_repository() -> Repository:
     if settings.backend == "database":
         if not settings.database_url:
             raise RuntimeError("SATWISER_DATA_BACKEND=database requires DATABASE_URL")
-        return DatabaseRepository(settings.database_url)
+        return DatabaseRepository(settings.database_url, settings.lab_storage_url)
     return LocalRepository(settings.app_data)
 
 
@@ -125,10 +125,17 @@ def metrics(repo: Repo) -> dict:
     return payload
 
 
-@app.get("/api/lab/{event_id}", response_model=schemas.LabWindow)
-def lab_window(event_id: str, repo: Repo) -> dict:
-    """Ten-day window of inertial states around an event, recomputed in the browser."""
-    payload = repo.lab_window(event_id)
+@app.get("/api/lab/{event_id}", response_class=Response,
+         responses={200: {"model": schemas.LabWindow,
+                          "description": "gzip-encoded JSON (Content-Encoding: gzip)"}})
+def lab_window(event_id: str, repo: Repo) -> Response:
+    """Ten-day window of inertial states around an event, recomputed in the browser.
+
+    Served as stored (gzip-compressed JSON); browsers decompress it transparently.
+    """
+    payload = repo.lab_window_gz(event_id)
     if payload is None:
         _not_found("Lab window")
-    return payload
+    return Response(content=payload, media_type="application/json",
+                    headers={"Content-Encoding": "gzip",
+                             "Cache-Control": "public, max-age=86400"})

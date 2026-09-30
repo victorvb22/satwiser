@@ -44,14 +44,6 @@ CREATE INDEX ix_events_sat_time ON events (satellite, time);
 
 ALTER TABLE "events" ENABLE ROW LEVEL SECURITY;
 
-CREATE TABLE lab_windows (
-	event_id VARCHAR(32) NOT NULL, 
-	payload_gz BYTEA NOT NULL, 
-	PRIMARY KEY (event_id)
-);
-
-ALTER TABLE "lab_windows" ENABLE ROW LEVEL SECURITY;
-
 CREATE TABLE revolutions (
 	satellite VARCHAR(8) NOT NULL, 
 	orbit INTEGER NOT NULL, 

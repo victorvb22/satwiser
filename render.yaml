@@ -16,5 +16,7 @@ services:
         value: database
       - key: DATABASE_URL
         sync: false
+      - key: SATWISER_LAB_STORAGE_URL
+        sync: false
       - key: CORS_ORIGINS
         sync: false

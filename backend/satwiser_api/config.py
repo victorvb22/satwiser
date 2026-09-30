@@ -4,6 +4,8 @@
 - ``SATWISER_APP_DATA``: folder of the exported files (default
   ``$SATWISER_DATA_DIR/app``);
 - ``DATABASE_URL``: SQLAlchemy URL of the Postgres database (Supabase in production);
+- ``SATWISER_LAB_STORAGE_URL``: public base URL of the object storage holding the lab
+  windows (``<base>/<event id>.json.gz``), used with the database backend;
 - ``CORS_ORIGINS``: comma-separated list of allowed front-end origins.
 
 No secret is ever sent to the browser: the database URL stays on the server.
@@ -39,6 +41,7 @@ class Settings:
     backend: str
     app_data: Path
     database_url: str | None
+    lab_storage_url: str | None
     cors_origins: tuple[str, ...]
 
 
@@ -50,5 +53,6 @@ def load_settings() -> Settings:
         backend=_get("SATWISER_DATA_BACKEND", "local"),
         app_data=app_data,
         database_url=_get("DATABASE_URL"),
+        lab_storage_url=_get("SATWISER_LAB_STORAGE_URL"),
         cors_origins=tuple(o.strip() for o in origins.split(",") if o.strip()),
     )

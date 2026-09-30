@@ -1,7 +1,8 @@
 """Database schema (SQLAlchemy Core), shared by the API and the import script.
 
 Portable types only, so the same schema runs on Postgres (Supabase) and SQLite (tests).
-JSON documents are stored as text; lab windows as gzip-compressed JSON.
+JSON documents are stored as text. Lab windows (about 0.5 MB each) are not in the
+database: they live in object storage (Supabase Storage) or in the local export.
 """
 
 from __future__ import annotations
@@ -14,7 +15,6 @@ from sqlalchemy import (
     Float,
     Index,
     Integer,
-    LargeBinary,
     MetaData,
     String,
     Table,
@@ -77,12 +77,6 @@ documents = Table(
     "documents", metadata,
     Column("key", String(64), primary_key=True),
     Column("payload", Text, nullable=False),
-)
-
-lab_windows = Table(
-    "lab_windows", metadata,
-    Column("event_id", String(32), primary_key=True),
-    Column("payload_gz", LargeBinary, nullable=False),
 )
 
 EVENT_COLUMNS = [c.name for c in events.columns]

@@ -160,28 +160,43 @@ function LabView({ eventId, grid }: { eventId: string; grid: Robustness }) {
   const windowQuery = useLabWindow(eventId);
   const allEvents = useAllEvents(event.data?.satellite);
   const labEvents = (allEvents.data ?? []).filter((e) => e.lab_available);
+  const byYear = useMemo(() => {
+    const groups = new Map<string, typeof labEvents>();
+    for (const e of labEvents) {
+      const y = e.time.slice(0, 4);
+      groups.set(y, [...(groups.get(y) ?? []), e]);
+    }
+    return [...groups.entries()];
+  }, [labEvents]);
   const presets = Object.entries(grid.presets);
   const [preset, setPreset] = useState<string | null>("pod");
   const [sigmaV, setSigmaV] = useState(sigmaPos(grid.presets.pod.sigma_m));
   const [pointsV, setPointsV] = useState(100);
   const [rhoV, setRhoV] = useState(0);
   const [dvV, setDvV] = useState<number | null>(null);
+  // The slider sets the magnitude; the sign follows the real manoeuvre (lowering: < 0).
+  const [dvSign, setDvSign] = useState(1);
   const [seed, setSeed] = useState(1);
 
   const realDv = event.data ? (event.data.dv_esa_mm_s ?? (event.data.kind === "false_alarm" ? 0 : null)) : null;
   useEffect(() => setDvV(null), [eventId]);
   const lab = useLab(windowQuery.data, realDv, useMemo<LabParams>(() => ({
     sigmaM: sigmaOf(sigmaV), pointsPerDay: pointsOf(pointsV), rho: rhoV / 20,
-    dvMmS: dvV === null ? 0 : dvOf(dvV), seed,
-  }), [sigmaV, pointsV, rhoV, dvV, seed]));
+    dvMmS: dvV === null ? 0 : dvSign * dvOf(dvV), seed,
+  }), [sigmaV, pointsV, rhoV, dvV, dvSign, seed]));
   useEffect(() => {
-    if (dvV === null && lab.realDv !== null) setDvV(lab.realDv > 0 ? dvPos(lab.realDv) : 0);
+    if (dvV === null && lab.realDv !== null) {
+      setDvSign(lab.realDv < 0 ? -1 : 1);
+      setDvV(lab.realDv !== 0 ? dvPos(Math.abs(lab.realDv)) : 0);
+    }
   }, [lab.realDv, dvV]);
 
   const sigma = sigmaOf(sigmaV);
   const points = pointsOf(pointsV);
   const rho = rhoV / 20;
   const dvMm = dvV === null ? 0 : dvOf(dvV);
+  const signedDv = (mm: number | null) =>
+    mm === null ? "—" : `${mm < 0 ? "−" : ""}${dv(Math.abs(mm))}`;
   const minDv = minDetectable(grid, sigma, points, rho);
   const choose = (key: string) => {
     const p = grid.presets[key];
@@ -226,7 +241,8 @@ function LabView({ eventId, grid }: { eventId: string; grid: Robustness }) {
                   lo="1" hi={num(BROWSER_MAX_POINTS, 0)} onChange={touch(setPointsV)} />
           <Slider id="rho" label="Corrélation des erreurs" value={rhoV} max={19}
                   display={num(rho, 2)} lo="0" hi="0,95" onChange={touch(setRhoV)} />
-          <Slider id="dv" label="Taille de la manœuvre" value={dvV ?? 0} display={dv(dvMm)}
+          <Slider id="dv" label="Taille de la manœuvre" value={dvV ?? 0}
+                  display={signedDv(dvSign * dvMm)}
                   lo="0,2 mm/s" hi="1 m/s" onChange={(v) => setDvV(v)} />
           <div className="card" style={{ padding: 20, gap: 12 }}>
             <div className="verdict">
@@ -238,9 +254,9 @@ function LabView({ eventId, grid }: { eventId: string; grid: Robustness }) {
             <div className="card-row" style={{ fontSize: 13 }}><span>Bruit par point moyenné</span>
               <span>{length(result?.noisePerBinM ?? null)}</span></div>
             <div className="card-row" style={{ fontSize: 13 }}><span>Saut de demi-grand axe</span>
-              <span>{result ? `+${length(result.stepM)}` : "—"}</span></div>
+              <span>{result ? `${result.stepM < 0 ? "−" : "+"}${length(Math.abs(result.stepM))}` : "—"}</span></div>
             <div className="card-row" style={{ fontSize: 13 }}><span>Δv réel (ESA)</span>
-              <span>{dv(lab.realDv)}</span></div>
+              <span>{signedDv(lab.realDv)}</span></div>
             <button className="button-outline" onClick={() => setSeed((s) => s + 1)}>Nouveau tirage du bruit</button>
           </div>
         </aside>
@@ -265,10 +281,15 @@ function LabView({ eventId, grid }: { eventId: string; grid: Robustness }) {
                     style={{ background: "var(--bg)", color: "var(--text)", border: "1px solid var(--border)",
                              borderRadius: 8, padding: "6px 10px", fontFamily: "var(--mono)", fontSize: 12 }}>
               {labEvents.length === 0 && <option value={eventId}>{eventId}</option>}
-              {labEvents.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.time.slice(0, 10)} · {KIND_LABEL[e.kind]}{e.dv_esa_mm_s ? ` · ${dv(e.dv_esa_mm_s)}` : ""}
-                </option>
+              {byYear.map(([year, list]) => (
+                <optgroup key={year} label={year}>
+                  {list.map((e) => (
+                    <option key={e.id} value={e.id}>
+                      {e.time.slice(0, 10)} · {KIND_LABEL[e.kind]}
+                      {e.dv_esa_mm_s ? ` · ${dv(e.dv_esa_mm_s)}` : ""}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
             </select>
           </label>

@@ -1,7 +1,8 @@
 """Load the exported app files into a SQL database (Supabase Postgres or SQLite).
 
 Idempotent: rows of the satellites present in the export are replaced. Run from a
-workstation with the pipeline outputs; the database URL is a server-side secret.
+workstation with the pipeline outputs; the database URL is a server-side secret. Lab
+windows go to object storage instead (``backend/scripts/upload_lab_windows.py``).
 
     python backend/scripts/load_database.py --database-url postgresql+psycopg://...
 """
@@ -68,15 +69,6 @@ def load(app_dir: Path, database_url: str, verbose: bool = True) -> dict[str, in
             conn.execute(insert(db.events), _records(events, db.EVENT_COLUMNS))
             counts[f"events_{sid}"] = len(events)
 
-            lab_ids = events.loc[events["lab_available"], "id"].tolist()
-            conn.execute(delete(db.lab_windows).where(db.lab_windows.c.event_id.in_(lab_ids)))
-            payloads = []
-            for event_id in lab_ids:
-                path = app_dir / "lab" / f"{event_id}.json.gz"
-                payloads.append({"event_id": event_id, "payload_gz": path.read_bytes()})
-            if payloads:
-                conn.execute(insert(db.lab_windows), payloads)
-            counts[f"lab_windows_{sid}"] = len(payloads)
 
         for key in ("robustness", "metrics"):
             path = app_dir / f"{key}.json"

@@ -81,7 +81,7 @@ def client(request, app_dir, tmp_path_factory):
     else:
         url = f"sqlite:///{tmp_path_factory.mktemp('db') / 'satwiser.db'}"
         load(app_dir, url, verbose=False)
-        repo = DatabaseRepository(url)
+        repo = DatabaseRepository(url, lab_storage_url=(app_dir / "lab").as_uri())
     main.app.dependency_overrides[main.get_repository] = lambda: repo
     with TestClient(main.app) as test_client:
         yield test_client

@@ -56,11 +56,17 @@ def test_robustness(client):
 
 
 def test_lab_window(client):
-    body = client.get("/api/lab/S1A-D101").json()
+    response = client.get("/api/lab/S1A-D101")
+    assert response.headers["content-encoding"] == "gzip"
+    body = response.json()
     assert len(body["template_a"]) == 175
     assert set(body["states"]) == {"rx", "ry", "rz", "vx", "vy", "vz"}
     assert client.get("/api/lab/S1A-F110").status_code == 404
-    assert client.get("/api/lab/..%2Fsatellites").status_code == 404
+
+
+def test_lab_window_rejects_unexpected_ids(client):
+    for bad in ("..%2Fsatellites", "S1A-D1.json", "x", "S1A-D101%2F..%2F..%2Fetc"):
+        assert client.get(f"/api/lab/{bad}").status_code == 404
 
 
 def test_read_only(client):
