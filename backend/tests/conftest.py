@@ -58,6 +58,10 @@ def app_dir(tmp_path_factory) -> Path:
             "detector": {"window_revs": 12, "threshold": 4.0}, "trials_per_cell": 60,
             "window_days": 10}
     (root / "robustness.json").write_text(json.dumps(grid))
+    metrics = {"satellite": "S1A", "detector": {"kappa": 2.0}, "test": {"recall": 0.96},
+               "comparison": [{"detector": "baseline", "test f1": 0.78}],
+               "noise_m": {"raw": 4.5, "template": 0.2}, "source": "test"}
+    (root / "metrics.json").write_text(json.dumps(metrics))
     window = {"event_id": "S1A-D101", "satellite": "S1A", "start": "2022-12-27T00:00:00",
               "step_s": 60.0, "event_time": "2023-01-01T02:00:00", "t_offset_s": [0.0, 60.0],
               "orbit": [30, 30], "states": {c: [1.0, 2.0] for c in

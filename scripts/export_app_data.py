@@ -28,7 +28,7 @@ import pandas as pd
 
 from satwiser import lab
 from satwiser.classify import rule
-from satwiser.config import data_dir, processed_dir, raw_dir
+from satwiser.config import REPO_ROOT, data_dir, processed_dir, raw_dir
 from satwiser.labels import dv_from_da
 from satwiser.pipeline.series import orbit_files, validity_start
 
@@ -169,6 +169,29 @@ def export_lab(sat: str, chosen: pd.DataFrame, model: dict, grid: dict, workers:
         list(pool.map(_lab_window, jobs))
 
 
+def _noise(values: np.ndarray) -> float:
+    d = np.diff(values)
+    d = d[np.isfinite(d)]
+    return float(1.4826 * np.median(np.abs(d - np.median(d))))
+
+
+def build_metrics(sat: str) -> dict:
+    """Headline numbers for the Method page, all read from the pipeline outputs."""
+    step3 = json.loads((REPO_ROOT / "reports" / "step3" / "metrics.json").read_text())
+    series = pd.read_parquet(processed_dir() / f"series_{sat}.parquet")
+    ops = json.loads((processed_dir() / f"model_{sat}.json").read_text())["operational_start"]
+    s = series[series["valid"] & (series["t"] >= ops)]
+    s = s[np.diff(s.index.to_numpy(), prepend=s.index[0] - 1) == 1]  # consecutive orbits
+    return {
+        "satellite": sat,
+        "detector": step3["cusum_config"],
+        "test": step3["test"],
+        "comparison": step3["comparison"],
+        "noise_m": {"raw": _noise(s["a"].to_numpy()), "template": _noise(s["a_c"].to_numpy())},
+        "source": "reports/step3/metrics.json, processed series",
+    }
+
+
 def summary(events: pd.DataFrame) -> dict:
     scored = events[events["kind"].isin(["detected", "missed", "false_alarm"])]
 
@@ -215,6 +238,7 @@ def main() -> None:
     events.to_parquet(out / f"events_{sat}.parquet", index=False)
 
     (out / "robustness.json").write_text(json.dumps(grid))
+    (out / "metrics.json").write_text(json.dumps(build_metrics(sat), default=float))
     satellites = [{
         "id": sat, "name": NAMES[sat],
         "first": rev["time"].min().isoformat(), "last": rev["time"].max().isoformat(),

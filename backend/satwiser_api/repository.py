@@ -52,6 +52,7 @@ class Repository(Protocol):
     def events(self, satellite: str, year: int | None, kind: str | None) -> list[dict]: ...
     def event(self, event_id: str) -> dict | None: ...
     def robustness(self) -> dict | None: ...
+    def metrics(self) -> dict | None: ...
     def lab_window(self, event_id: str) -> dict | None: ...
 
 
@@ -79,8 +80,10 @@ class LocalRepository:
             self._series[sat] = series.assign(year=series["time"].dt.year)
             self._daily[sat] = pd.read_parquet(self.folder / f"daily_{sat}.parquet")
             self._events[sat] = pd.read_parquet(self.folder / f"events_{sat}.parquet")
-        robustness = self.folder / "robustness.json"
-        self._robustness = json.loads(robustness.read_text()) if robustness.exists() else None
+        self._documents = {}
+        for key in ("robustness", "metrics"):
+            path = self.folder / f"{key}.json"
+            self._documents[key] = json.loads(path.read_text()) if path.exists() else None
 
     def check(self) -> None:
         return None
@@ -127,7 +130,10 @@ class LocalRepository:
         return {k: _clean(v) for k, v in rows.iloc[0].to_dict().items()}
 
     def robustness(self) -> dict | None:
-        return self._robustness
+        return self._documents["robustness"]
+
+    def metrics(self) -> dict | None:
+        return self._documents["metrics"]
 
     def lab_window(self, event_id: str) -> dict | None:
         path = self.folder / "lab" / f"{Path(event_id).name}.json.gz"
@@ -189,11 +195,17 @@ class DatabaseRepository:
             row = conn.execute(select(db.events).where(db.events.c.id == event_id)).first()
         return None if row is None else {k: _clean(v) for k, v in row._mapping.items()}
 
-    def robustness(self) -> dict | None:
+    def _document(self, key: str) -> dict | None:
         with self.engine.connect() as conn:
             row = conn.execute(select(db.documents.c.payload)
-                               .where(db.documents.c.key == "robustness")).first()
+                               .where(db.documents.c.key == key)).first()
         return None if row is None else json.loads(row.payload)
+
+    def robustness(self) -> dict | None:
+        return self._document("robustness")
+
+    def metrics(self) -> dict | None:
+        return self._document("metrics")
 
     def lab_window(self, event_id: str) -> dict | None:
         with self.engine.connect() as conn:

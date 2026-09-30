@@ -108,3 +108,12 @@ class LabWindow(BaseModel):
     template_a: list[float]
     detector: dict
     esa_manoeuvres: list[LabManoeuvre]
+
+
+class Metrics(BaseModel):
+    satellite: str
+    detector: dict
+    test: dict
+    comparison: list[dict]
+    noise_m: dict[str, float]
+    source: str

@@ -112,9 +112,10 @@ def ar1(normals: np.ndarray, rho: float) -> np.ndarray:
     return lfilter([scale], [1.0, -rho], x, axis=0)
 
 
-def subsample(n_samples: int, points_per_day: float, phase: int = 0) -> np.ndarray:
-    """Indices of evenly spaced samples at ``points_per_day`` on the 10 s grid."""
-    stride = max(1, int(round(SAMPLES_PER_DAY / points_per_day)))
+def subsample(n_samples: int, points_per_day: float, phase: int = 0,
+              step_s: float = STEP_S) -> np.ndarray:
+    """Indices of evenly spaced samples at ``points_per_day`` on a ``step_s`` grid."""
+    stride = max(1, int(np.floor(86400.0 / step_s / points_per_day + 0.5)))
     return np.arange(phase % stride, n_samples, stride)
 
 
@@ -243,7 +244,7 @@ def window_detect(z: np.ndarray, threshold: float, window: int) -> list[int]:
 
 
 def detector_window(det: LabDetector, revs_per_bin: int) -> int:
-    return max(2, int(round(det.window_revs / revs_per_bin)))
+    return max(2, int(np.floor(det.window_revs / revs_per_bin + 0.5)))
 
 
 def analyse(states: pd.DataFrame, template: np.ndarray, deg: Degradation, det: LabDetector,

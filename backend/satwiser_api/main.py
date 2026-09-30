@@ -116,6 +116,15 @@ def robustness(repo: Repo) -> dict:
     return payload
 
 
+@app.get("/api/metrics", response_model=schemas.Metrics)
+def metrics(repo: Repo) -> dict:
+    """Headline evaluation numbers of the main detector (from the pipeline reports)."""
+    payload = repo.metrics()
+    if payload is None:
+        _not_found("Metrics")
+    return payload
+
+
 @app.get("/api/lab/{event_id}", response_model=schemas.LabWindow)
 def lab_window(event_id: str, repo: Repo) -> dict:
     """Ten-day window of inertial states around an event, recomputed in the browser."""

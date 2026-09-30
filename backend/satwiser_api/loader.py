@@ -78,11 +78,11 @@ def load(app_dir: Path, database_url: str, verbose: bool = True) -> dict[str, in
                 conn.execute(insert(db.lab_windows), payloads)
             counts[f"lab_windows_{sid}"] = len(payloads)
 
-        robustness = app_dir / "robustness.json"
-        if robustness.exists():
-            conn.execute(delete(db.documents).where(db.documents.c.key == "robustness"))
-            conn.execute(insert(db.documents),
-                         [{"key": "robustness", "payload": robustness.read_text()}])
+        for key in ("robustness", "metrics"):
+            path = app_dir / f"{key}.json"
+            if path.exists():
+                conn.execute(delete(db.documents).where(db.documents.c.key == key))
+                conn.execute(insert(db.documents), [{"key": key, "payload": path.read_text()}])
     if verbose:
         print(json.dumps(counts, indent=2))
     return counts

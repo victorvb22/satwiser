@@ -65,3 +65,9 @@ def test_lab_window(client):
 
 def test_read_only(client):
     assert client.post("/api/satellites").status_code == 405
+
+
+def test_metrics(client):
+    body = client.get("/api/metrics").json()
+    assert body["test"]["recall"] == 0.96
+    assert body["noise_m"]["template"] == 0.2
