@@ -39,7 +39,8 @@ def _poeorb(args: argparse.Namespace) -> None:
     selected = poeorb.select_window(refs, args.start, args.end)
     total_mb = sum(r.size for r in selected) / 1e6
     print(f"{len(selected)} files needed for {args.start}..{args.end} ({total_mb:.0f} MB)")
-    poeorb.download(selected, raw_dir("poeorb", args.satellite))
+    poeorb.download(selected, raw_dir("poeorb", args.satellite), compress=not args.no_compress,
+                    workers=args.workers)
 
 
 def main() -> None:
@@ -53,6 +54,8 @@ def main() -> None:
     p.add_argument("--start", type=date.fromisoformat, required=True, help="first UTC day")
     p.add_argument("--end", type=date.fromisoformat, required=True, help="exclusive end day")
     p.add_argument("--refresh-index", action="store_true", help="re-list the bucket")
+    p.add_argument("--no-compress", action="store_true", help="keep plain .EOF files")
+    p.add_argument("--workers", type=int, default=8, help="parallel downloads")
     args = parser.parse_args()
 
     if args.source == "esa":

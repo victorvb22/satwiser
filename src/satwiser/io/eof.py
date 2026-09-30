@@ -7,6 +7,7 @@ duplicates and reports gaps.
 
 from __future__ import annotations
 
+import gzip
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -18,13 +19,18 @@ _FIELDS = ("X", "Y", "Z", "VX", "VY", "VZ")
 
 
 def read_eof(path: Path | str) -> pd.DataFrame:
-    """Read one orbit file.
+    """Read one orbit file (``.EOF`` or gzip-compressed ``.EOF.gz``).
 
     Returns a frame indexed by UTC timestamp with columns ``x, y, z`` (m), ``vx, vy, vz``
     (m/s) in the Earth-fixed frame, ``ut1_utc`` (s), ``orbit`` (absolute orbit number)
     and ``quality``.
     """
-    tree = etree.parse(str(path))
+    path = Path(path)
+    if path.suffix == ".gz":
+        with gzip.open(path, "rb") as fh:
+            tree = etree.parse(fh)
+    else:
+        tree = etree.parse(str(path))
     osvs = tree.findall(".//List_of_OSVs/OSV")
     n = len(osvs)
     utc = np.empty(n, dtype="datetime64[us]")

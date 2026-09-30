@@ -17,8 +17,12 @@ creation-date range.
 
 from __future__ import annotations
 
+import gzip
 import re
+import threading
+import time
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -109,23 +113,72 @@ def latest_per_validity(refs: list[OrbitFileRef]) -> list[OrbitFileRef]:
     return sorted(best.values(), key=lambda r: r.validity_start)
 
 
-def download(refs: list[OrbitFileRef], dest: Path, session: requests.Session | None = None,
-             verbose: bool = True) -> list[Path]:
-    """Download files that are not already present with the expected size."""
-    session = session or requests.Session()
-    dest.mkdir(parents=True, exist_ok=True)
-    paths = []
-    for i, ref in enumerate(refs, 1):
-        path = dest / ref.name
-        if not (path.exists() and (ref.size == 0 or path.stat().st_size == ref.size)):
-            tmp = path.with_suffix(".part")
+def local_path(ref: OrbitFileRef, dest: Path) -> Path | None:
+    """Existing local copy of ``ref`` (plain or gzip-compressed), if complete."""
+    plain = dest / ref.name
+    if plain.exists() and (ref.size == 0 or plain.stat().st_size == ref.size):
+        return plain
+    packed = dest / (ref.name + ".gz")
+    return packed if packed.exists() else None
+
+
+def _fetch(ref: OrbitFileRef, dest: Path, session: requests.Session, compress: bool,
+           attempts: int = 5) -> Path:
+    path = dest / (ref.name + (".gz" if compress else ""))
+    tmp = path.with_name(path.name + ".part")
+    for attempt in range(1, attempts + 1):
+        try:
             with session.get(ref.url, stream=True, timeout=120) as response:
                 response.raise_for_status()
-                with tmp.open("wb") as fh:
+                opener = gzip.open if compress else open
+                with opener(tmp, "wb") as fh:
                     for chunk in response.iter_content(chunk_size=1 << 20):
                         fh.write(chunk)
             tmp.replace(path)
-            if verbose:
-                print(f"[{i}/{len(refs)}] {ref.name}")
-        paths.append(path)
-    return paths
+            return path
+        except (requests.ConnectionError, requests.Timeout, requests.HTTPError):
+            if attempt == attempts:
+                raise
+            time.sleep(2**attempt)
+    raise AssertionError("unreachable")
+
+
+def download(refs: list[OrbitFileRef], dest: Path, compress: bool = True, workers: int = 8,
+             verbose: bool = True) -> list[Path]:
+    """Download missing files, gzip-compressed by default (about 8x smaller).
+
+    Files already present (plain or compressed) are skipped, so an interrupted run can
+    simply be restarted.
+    """
+    dest.mkdir(parents=True, exist_ok=True)
+    paths: dict[str, Path] = {}
+    todo = []
+    for ref in refs:
+        existing = local_path(ref, dest)
+        if existing is not None:
+            paths[ref.name] = existing
+        else:
+            todo.append(ref)
+    local = threading.local()
+
+    def job(ref: OrbitFileRef) -> tuple[str, Path | None]:
+        if not hasattr(local, "session"):
+            local.session = requests.Session()
+        try:
+            return ref.name, _fetch(ref, dest, local.session, compress)
+        except requests.RequestException as exc:
+            print(f"FAILED {ref.name}: {exc}", flush=True)
+            return ref.name, None
+
+    failed = []
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for n, (name, path) in enumerate(pool.map(job, todo), 1):
+            if path is None:
+                failed.append(name)
+            else:
+                paths[name] = path
+            if verbose and (n % 50 == 0 or n == len(todo)):
+                print(f"downloaded {n}/{len(todo)}", flush=True)
+    if failed:
+        print(f"{len(failed)} files failed; rerun the same command to retry them.")
+    return [paths[r.name] for r in refs if r.name in paths]
