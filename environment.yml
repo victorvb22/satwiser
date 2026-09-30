@@ -1,0 +1,21 @@
+name: satwiser
+variables:
+  PYTHONNOUSERSITE: "1"
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - numpy
+  - pandas
+  - scipy
+  - scikit-learn
+  - matplotlib
+  - pyarrow
+  - requests
+  - truststore
+  - lxml
+  - pytest
+  - ruff
+  - pip
+  - pip:
+      - -e .

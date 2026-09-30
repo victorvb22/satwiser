@@ -1,0 +1,57 @@
+<?xml version="1.0" ?>
+<Earth_Explorer_File>
+  <Earth_Explorer_Header>
+    <Fixed_Header>
+      <File_Name>C</File_Name>
+      <Mission>Sentinel-1A</Mission>
+      <File_Type>AUX_POEORB</File_Type>
+    </Fixed_Header>
+    <Variable_Header>
+      <Ref_Frame>EARTH_FIXED</Ref_Frame>
+      <Time_Reference>UTC</Time_Reference>
+    </Variable_Header>
+  </Earth_Explorer_Header>
+<Data_Block type="xml">
+  <List_of_OSVs count="3">
+    <OSV>
+      <TAI>TAI=2022-12-11T23:02:19.000000</TAI>
+      <UTC>UTC=2022-12-11T23:01:42.000000</UTC>
+      <UT1>UT1=2022-12-11T23:01:41.981875</UT1>
+      <Absolute_Orbit>+46290</Absolute_Orbit>
+      <X unit="m">-817057.346109</X>
+      <Y unit="m">5402798.403886</Y>
+      <Z unit="m">-4503240.869555</Z>
+      <VX unit="m/s">2462.292750</VX>
+      <VY unit="m/s">-4364.688307</VY>
+      <VZ unit="m/s">-5689.747049</VZ>
+      <Quality>NOMINAL</Quality>
+    </OSV>
+    <OSV>
+      <TAI>TAI=2022-12-11T23:02:29.000000</TAI>
+      <UTC>UTC=2022-12-11T23:01:52.000000</UTC>
+      <UT1>UT1=2022-12-11T23:01:51.981875</UT1>
+      <Absolute_Orbit>+46290</Absolute_Orbit>
+      <X unit="m">-816957.346109</X>
+      <Y unit="m">5402798.403886</Y>
+      <Z unit="m">-4503240.869555</Z>
+      <VX unit="m/s">2462.292750</VX>
+      <VY unit="m/s">-4364.688307</VY>
+      <VZ unit="m/s">-5689.747049</VZ>
+      <Quality>NOMINAL</Quality>
+    </OSV>
+    <OSV>
+      <TAI>TAI=2022-12-11T23:02:39.000000</TAI>
+      <UTC>UTC=2022-12-11T23:02:02.000000</UTC>
+      <UT1>UT1=2022-12-11T23:02:01.981875</UT1>
+      <Absolute_Orbit>+46290</Absolute_Orbit>
+      <X unit="m">-816857.346109</X>
+      <Y unit="m">5402798.403886</Y>
+      <Z unit="m">-4503240.869555</Z>
+      <VX unit="m/s">2462.292750</VX>
+      <VY unit="m/s">-4364.688307</VY>
+      <VZ unit="m/s">-5689.747049</VZ>
+      <Quality>NOMINAL</Quality>
+    </OSV>
+  </List_of_OSVs>
+</Data_Block>
+</Earth_Explorer_File>

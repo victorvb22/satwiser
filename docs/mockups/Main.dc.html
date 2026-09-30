@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Journal orbital — Sentinel-1A</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@200;300;400;500&amp;family=Geist+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#06080E;font-family:'Geist',system-ui,sans-serif;color:#E8ECF4}
+a{color:#8C95AB;text-decoration:none}a:hover{color:#E8ECF4}
+</style>
+</helmet>
+<div style="width: 1440px; height: 980px; position: relative; overflow: hidden; background: #06080E; font-family: 'Geist', system-ui, sans-serif; color: #E8ECF4">
+  <div style="position: absolute; inset: 0; pointer-events: none">
+    <sc-for list="{{stars}}" as="st" hint-placeholder-count="40">
+      <span style="position: absolute; left: {{st.x}}px; top: {{st.y}}px; width: {{st.s}}px; height: {{st.s}}px; border-radius: 50%; background: #CFDBF5; opacity: {{st.o}}"></span>
+    </sc-for>
+  </div>
+
+  <div style="position: relative; display: flex; flex-direction: column; padding: 0 72px">
+    <nav style="height: 80px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #161B2A">
+      <div style="display: flex; align-items: center; gap: 12px">
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true"><ellipse cx="14" cy="14" rx="12" ry="5" stroke="#9CC2FF" stroke-width="1" transform="rotate(-24 14 14)"></ellipse><circle cx="14" cy="14" r="3" fill="#E8ECF4"></circle><circle cx="24" cy="9.5" r="1.6" fill="#F4A259"></circle></svg>
+        <span style="font-family: 'Geist', system-ui, sans-serif; font-size: 20px; font-weight: 500; letter-spacing: -0.4px">Satwiser</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 40px; font-size: 14px">
+        <a href="Main.dc.html" style="color: #E8ECF4; padding: 12px 0; border-bottom: 1px solid #9CC2FF">Mission</a>
+        <a href="Lab.dc.html" style="padding: 12px 0">Labo</a>
+        <a href="#" style="padding: 12px 0">Méthode</a>
+      </div>
+      <span style="font-family: 'Geist Mono', monospace; font-size: 11px; letter-spacing: 1.2px; color: #8C95AB; border: 1px solid #1E2436; border-radius: 999px; padding: 6px 12px">APERÇU · DONNÉES SIMULÉES</span>
+    </nav>
+
+    <header style="display: flex; justify-content: space-between; align-items: flex-end; padding-top: 48px">
+      <div style="display: flex; flex-direction: column; gap: 10px">
+        <span style="font-family: 'Geist Mono', monospace; font-size: 12px; letter-spacing: 2px; color: #9CC2FF">SENTINEL-1A · HÉLIOSYNCHRONE · 693 KM</span>
+        <h1 style="margin: 0; font-family: 'Geist', system-ui, sans-serif; font-weight: 200; font-size: 68px; line-height: 1; letter-spacing: -2.5px">Journal <span style="color: #9CC2FF">orbital</span></h1>
+        <p style="margin: 0; font-size: 15px; color: #8C95AB; max-width: 560px; line-height: 1.5">Demi-grand axe moyen par révolution. La traînée fait descendre l’orbite, chaque manœuvre la remonte.</p>
+      </div>
+      <div style="display: flex; gap: 8px" role="group" aria-label="Année affichée">
+        <sc-for list="{{years}}" as="yr" hint-placeholder-count="5">
+          <button onClick="{{yr.pick}}" style="font-family: 'Geist Mono', monospace; font-size: 13px; min-width: 64px; height: 44px; border-radius: 999px; cursor: pointer; background: {{yr.bg}}; color: {{yr.fg}}; border: 1px solid {{yr.bd}}">{{yr.label}}</button>
+        </sc-for>
+      </div>
+    </header>
+
+    <section style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 24px; margin-top: 40px; border-top: 1px solid #161B2A; padding-top: 24px">
+      <div style="display: flex; flex-direction: column; gap: 6px"><span style="font-size: 12px; color: #8C95AB">Manœuvres étiquetées ESA</span><span style="font-family: 'Geist Mono', monospace; font-size: 32px; font-weight: 400">{{stats.total}}</span></div>
+      <div style="display: flex; flex-direction: column; gap: 6px"><span style="font-size: 12px; color: #8C95AB">Détectées</span><span style="font-family: 'Geist Mono', monospace; font-size: 32px; color: #F4A259">{{stats.det}}</span></div>
+      <div style="display: flex; flex-direction: column; gap: 6px"><span style="font-size: 12px; color: #8C95AB">Manquées</span><span style="font-family: 'Geist Mono', monospace; font-size: 32px">{{stats.miss}}</span></div>
+      <div style="display: flex; flex-direction: column; gap: 6px"><span style="font-size: 12px; color: #8C95AB">Fausses alarmes</span><span style="font-family: 'Geist Mono', monospace; font-size: 32px; color: #8C95AB">{{stats.fa}}</span></div>
+    </section>
+
+    <div style="display: flex; gap: 48px; margin-top: 40px">
+      <div style="width: 936px; display: flex; flex-direction: column; gap: 14px">
+        <div style="position: relative; width: 936px; height: 340px">
+          <svg width="936" height="340" viewBox="0 0 936 340" aria-label="Évolution du demi-grand axe moyen">
+            <path d="{{chart.grid}}" stroke="#141A29" stroke-width="1" fill="none"></path>
+            <path d="{{chart.zero}}" stroke="#232B40" stroke-width="1" stroke-dasharray="2 6" fill="none"></path>
+            <path d="{{chart.path}}" stroke="#9CC2FF" stroke-width="7" stroke-opacity="0.10" fill="none" stroke-linejoin="round"></path>
+            <path d="{{chart.path}}" stroke="#9CC2FF" stroke-width="1.3" fill="none" stroke-linejoin="round"></path>
+          </svg>
+          <span style="position: absolute; left: 0; top: 0; font-family: 'Geist Mono', monospace; font-size: 11px; color: #5E6782">+150 m</span>
+          <span style="position: absolute; left: 0; bottom: 0; font-family: 'Geist Mono', monospace; font-size: 11px; color: #5E6782">−150 m</span>
+          <sc-for list="{{markers}}" as="m" hint-placeholder-count="12">
+            <button onClick="{{m.pick}}" aria-label="{{m.aria}}" style="position: absolute; left: {{m.x}}px; top: {{m.y}}px; width: 24px; height: 24px; padding: 0; background: transparent; border: 0; cursor: pointer; display: flex; align-items: center; justify-content: center">
+              <span style="display: block; width: 9px; height: 9px; border-radius: {{m.radius}}; background: {{m.fill}}; border: 1.5px solid {{m.stroke}}; transform: rotate({{m.rot}}deg); box-shadow: 0 0 0 {{m.halo}}px rgba(156,194,255,0.28)"></span>
+            </button>
+          </sc-for>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-family: 'Geist Mono', monospace; font-size: 11px; color: #5E6782">
+          <sc-for list="{{months}}" as="mo" hint-placeholder-count="12"><span>{{mo}}</span></sc-for>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 8px">
+          <span style="font-size: 12px; color: #8C95AB">Activité solaire · F10.7</span>
+          <svg width="936" height="44" viewBox="0 0 936 44" aria-hidden="true">
+            <path d="{{chart.solarArea}}" fill="#F4A259" fill-opacity="0.10"></path>
+            <path d="{{chart.solar}}" stroke="#F4A259" stroke-opacity="0.55" stroke-width="1" fill="none"></path>
+          </svg>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 4px">
+          <span style="font-size: 12px; color: #8C95AB">Mission complète · {{overview.range}}</span>
+          <div style="position: relative; width: 936px; height: 36px">
+            <svg width="936" height="36" viewBox="0 0 936 36" aria-hidden="true"><path d="{{overview.path}}" stroke="#5E6782" stroke-width="0.6" fill="none"></path></svg>
+            <span style="position: absolute; top: 0; height: 36px; left: {{overview.x}}px; width: {{overview.w}}px; border: 1px solid #9CC2FF; background: rgba(156,194,255,0.08); border-radius: 4px"></span>
+          </div>
+        </div>
+      </div>
+
+      <aside style="width: 312px; display: flex; flex-direction: column; gap: 24px">
+        <div style="border: 1px solid #1E2436; border-radius: 16px; padding: 24px; background: rgba(12,16,32,0.7); display: flex; flex-direction: column; gap: 18px">
+          <div style="display: flex; justify-content: space-between; align-items: center">
+            <span style="font-family: 'Geist Mono', monospace; font-size: 11px; letter-spacing: 1.5px; color: #8C95AB">ÉVÉNEMENT</span>
+            <span style="font-family: 'Geist Mono', monospace; font-size: 11px; padding: 4px 10px; border-radius: 999px; color: {{card.tagFg}}; border: 1px solid {{card.tagBd}}">{{card.status}}</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 4px">
+            <span style="font-family: 'Geist', system-ui, sans-serif; font-weight: 300; font-size: 28px; line-height: 1.1; letter-spacing: -0.8px">{{card.title}}</span>
+            <span style="font-size: 14px; color: #8C95AB">{{card.date}}</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 12px; border-top: 1px solid #161B2A; padding-top: 16px">
+            <div style="display: flex; justify-content: space-between; font-size: 14px"><span style="color: #8C95AB">Δv estimé</span><span style="font-family: 'Geist Mono', monospace">{{card.dvEst}}</span></div>
+            <div style="display: flex; justify-content: space-between; font-size: 14px"><span style="color: #8C95AB">Δv ESA</span><span style="font-family: 'Geist Mono', monospace">{{card.dvTrue}}</span></div>
+            <div style="display: flex; justify-content: space-between; font-size: 14px"><span style="color: #8C95AB">Saut de demi-grand axe</span><span style="font-family: 'Geist Mono', monospace">{{card.da}}</span></div>
+            <div style="display: flex; justify-content: space-between; font-size: 14px"><span style="color: #8C95AB">Confiance</span><span style="font-family: 'Geist Mono', monospace">{{card.conf}}</span></div>
+          </div>
+          <a href="Lab.dc.html" style="display: flex; align-items: center; justify-content: center; height: 44px; border-radius: 999px; border: 1px solid #9CC2FF; color: #9CC2FF; font-size: 14px">Tester dans le labo →</a>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 12px; font-size: 13px; color: #8C95AB">
+          <div style="display: flex; align-items: center; gap: 12px"><span style="width: 9px; height: 9px; border-radius: 50%; background: #F4A259; border: 1.5px solid #F4A259"></span>Manœuvre détectée</div>
+          <div style="display: flex; align-items: center; gap: 12px"><span style="width: 9px; height: 9px; border-radius: 50%; background: #06080E; border: 1.5px solid #F4A259"></span>Manœuvre manquée</div>
+          <div style="display: flex; align-items: center; gap: 12px"><span style="width: 8px; height: 8px; background: #06080E; border: 1.5px solid #8C95AB; transform: rotate(45deg)"></span>Fausse alarme</div>
+        </div>
+      </aside>
+    </div>
+
+    <footer style="position: absolute; top: 936px; left: 72px; right: 72px; display: flex; justify-content: space-between; font-family: 'Geist Mono', monospace; font-size: 11px; color: #5E6782">
+      <span>Contains modified Copernicus Sentinel data [année]</span>
+      <span>Maquette — valeurs simulées</span>
+    </footer>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":980}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { year: 2025, sel: 0 }; }
+  rng(seed) { let a = seed >>> 0; return function () { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+  build() {
+    const r = this.rng(7), t0 = 2014.8, t1 = 2026.7, dt = 1 / 365.25;
+    const days = [], events = [];
+    let a = 0;
+    for (let t = t0; t <= t1; t += dt) {
+      const cyc = 0.5 + 0.5 * Math.cos(2 * Math.PI * (t - 2014.2) / 11);
+      const rate = 6 + 22 * cyc;
+      a -= rate * (1 + 0.3 * (r() - 0.5));
+      if (a < -150) {
+        const da = 300 + (r() - 0.5) * 40;
+        const miss = r() < 0.07;
+        events.push({ t: t, da: da, miss: miss, err: 1 + (r() - 0.5) * 0.12, conf: 0.82 + r() * 0.17 });
+        a += da;
+      }
+      days.push({ t: t, a: a, f: 70 + 150 * cyc + (r() - 0.5) * 30 });
+    }
+    const fas = [];
+    for (let y = 2015; y <= 2026; y++) { for (let k = 0; k < 2; k++) fas.push({ t: y + r(), conf: 0.51 + r() * 0.15 }); }
+    const stars = [];
+    const rs = this.rng(3);
+    for (let i = 0; i < 90; i++) stars.push({ x: Math.round(rs() * 1440), y: Math.round(rs() * 980), s: rs() < 0.85 ? 1 : 2, o: (0.15 + rs() * 0.5).toFixed(2) });
+    return { days: days, events: events, fas: fas, stars: stars, t0: t0, t1: t1 };
+  }
+  dateFr(t) {
+    const mo = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+    const y = Math.floor(t), d = Math.floor((t - y) * 365.25), dt = new Date(Date.UTC(y, 0, 1 + d));
+    return dt.getUTCDate() + ' ' + mo[dt.getUTCMonth()] + ' ' + y;
+  }
+  renderVals() {
+    if (!this._m) this._m = this.build();
+    const M = this._m, Y = this.state.year, W = 936, H = 340;
+    const nf = (v, d) => v.toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d });
+    const X = (t) => (t - Y) * W;
+    const Yv = (a) => H / 2 - a / 180 * (H / 2 - 6);
+    const aAt = (t) => { const i = Math.max(0, Math.min(M.days.length - 1, Math.round((t - M.t0) * 365.25))); return M.days[i].a; };
+    const win = M.days.filter((d) => d.t >= Y && d.t < Y + 1);
+    let path = '';
+    win.forEach((d, i) => { path += (i ? 'L' : 'M') + X(d.t).toFixed(1) + ' ' + Yv(d.a).toFixed(1); });
+    let grid = '';
+    for (let k = 0; k <= 12; k++) grid += 'M' + (k * W / 12).toFixed(1) + ' 0V' + H;
+    grid += 'M0 ' + Yv(150).toFixed(1) + 'H' + W + 'M0 ' + Yv(-150).toFixed(1) + 'H' + W;
+    let solar = '';
+    win.forEach((d, i) => { solar += (i ? 'L' : 'M') + X(d.t).toFixed(1) + ' ' + (44 - (d.f - 50) / 230 * 40).toFixed(1); });
+    const solarArea = solar + 'L' + W + ' 44L0 44Z';
+    const dvOf = (da) => da * 7504 / (2 * 7.071e6) * 100;
+    const items = [];
+    M.events.filter((e) => e.t >= Y && e.t < Y + 1).forEach((e) => items.push({ t: e.t, kind: e.miss ? 'miss' : 'det', e: e }));
+    M.fas.filter((f) => f.t >= Y && f.t < Y + 1).forEach((f) => items.push({ t: f.t, kind: 'fa', e: f }));
+    items.sort((p, q) => p.t - q.t);
+    const sel = Math.min(this.state.sel, items.length - 1);
+    const markers = items.map((it, i) => {
+      const y = it.kind === 'fa' ? Yv(aAt(it.t)) : Yv(aAt(it.t + 1 / 365.25));
+      const isSel = i === sel;
+      return {
+        x: (X(it.t) - 12).toFixed(1), y: (y - 12).toFixed(1),
+        radius: it.kind === 'fa' ? '1px' : '50%',
+        fill: it.kind === 'det' ? '#F4A259' : '#06080E',
+        stroke: it.kind === 'fa' ? '#8C95AB' : '#F4A259',
+        rot: it.kind === 'fa' ? 45 : 0,
+        halo: isSel ? 7 : 0,
+        aria: (it.kind === 'det' ? 'Manœuvre détectée' : it.kind === 'miss' ? 'Manœuvre manquée' : 'Fausse alarme') + ', ' + this.dateFr(it.t),
+        pick: () => this.setState({ sel: i })
+      };
+    });
+    const cur = items[sel];
+    let card;
+    if (cur.kind === 'fa') {
+      card = { title: 'Fausse alarme', status: 'NON ÉTIQUETÉ', tagFg: '#8C95AB', tagBd: '#2A3148', date: this.dateFr(cur.t), dvEst: nf(0.4, 1) + ' cm/s', dvTrue: '—', da: '—', conf: nf(cur.e.conf, 2) };
+    } else {
+      const dv = dvOf(cur.e.da);
+      card = { title: cur.kind === 'det' ? 'Maintien à poste' : 'Manœuvre manquée', status: cur.kind === 'det' ? 'DÉTECTÉE' : 'MANQUÉE', tagFg: '#F4A259', tagBd: 'rgba(244,162,89,0.4)', date: this.dateFr(cur.t), dvEst: cur.kind === 'det' ? nf(dv * cur.e.err, 1) + ' cm/s' : '—', dvTrue: nf(dv, 1) + ' cm/s', da: '+' + Math.round(cur.e.da) + ' m', conf: cur.kind === 'det' ? nf(cur.e.conf, 2) : '—' };
+    }
+    const stats = { total: items.filter((i) => i.kind !== 'fa').length, det: items.filter((i) => i.kind === 'det').length, miss: items.filter((i) => i.kind === 'miss').length, fa: items.filter((i) => i.kind === 'fa').length };
+    let ov = '';
+    const span = M.t1 - M.t0;
+    for (let i = 0; i < M.days.length; i += 3) { const d = M.days[i]; ov += (i ? 'L' : 'M') + ((d.t - M.t0) / span * W).toFixed(1) + ' ' + (18 - d.a / 180 * 16).toFixed(1); }
+    const years = [2016, 2019, 2021, 2024, 2025].map((y) => ({ label: String(y), bg: y === Y ? '#9CC2FF' : 'transparent', fg: y === Y ? '#06080E' : '#8C95AB', bd: y === Y ? '#9CC2FF' : '#1E2436', pick: () => this.setState({ year: y, sel: 0 }) }));
+    return {
+      stars: M.stars, years: years, stats: stats, markers: markers, card: card,
+      months: ['JAN', 'FÉV', 'MAR', 'AVR', 'MAI', 'JUIN', 'JUIL', 'AOÛT', 'SEPT', 'OCT', 'NOV', 'DÉC'],
+      chart: { path: path, grid: grid, zero: 'M0 ' + Yv(0).toFixed(1) + 'H' + W, solar: solar, solarArea: solarArea },
+      overview: { path: ov, x: ((Y - M.t0) / span * W).toFixed(1), w: (W / span).toFixed(1), range: '2014 → 2026' }
+    };
+  }
+}
+</script>
+</body>
+</html>

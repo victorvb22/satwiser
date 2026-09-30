@@ -1,0 +1,30 @@
+# Internal planning document — never committed.
+BRIEF.md
+
+# Secrets
+.env
+*.env
+!.env.example
+
+# Local data (raw downloads live outside the repo, see SATWISER_DATA_DIR)
+data/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.venv/
+build/
+dist/
+
+# Node
+node_modules/
+frontend/dist/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

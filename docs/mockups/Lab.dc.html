@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Labo de dégradation</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@200;300;400;500&amp;family=Geist+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#06080E;font-family:'Geist',system-ui,sans-serif;color:#E8ECF4}
+a{color:#8C95AB;text-decoration:none}a:hover{color:#E8ECF4}
+</style>
+</helmet>
+<div style="width: 1440px; height: 980px; position: relative; overflow: hidden; background: #06080E; font-family: 'Geist', system-ui, sans-serif; color: #E8ECF4">
+  <div style="position: absolute; inset: 0; pointer-events: none">
+    <sc-for list="{{stars}}" as="st" hint-placeholder-count="40">
+      <span style="position: absolute; left: {{st.x}}px; top: {{st.y}}px; width: {{st.s}}px; height: {{st.s}}px; border-radius: 50%; background: #CFDBF5; opacity: {{st.o}}"></span>
+    </sc-for>
+  </div>
+
+  <div style="position: relative; display: flex; flex-direction: column; padding: 0 72px">
+    <nav style="height: 80px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #161B2A">
+      <div style="display: flex; align-items: center; gap: 12px">
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true"><ellipse cx="14" cy="14" rx="12" ry="5" stroke="#9CC2FF" stroke-width="1" transform="rotate(-24 14 14)"></ellipse><circle cx="14" cy="14" r="3" fill="#E8ECF4"></circle><circle cx="24" cy="9.5" r="1.6" fill="#F4A259"></circle></svg>
+        <span style="font-family: 'Geist', system-ui, sans-serif; font-size: 20px; font-weight: 500; letter-spacing: -0.4px">Satwiser</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 40px; font-size: 14px">
+        <a href="Main.dc.html" style="padding: 12px 0">Mission</a>
+        <a href="Lab.dc.html" style="color: #E8ECF4; padding: 12px 0; border-bottom: 1px solid #9CC2FF">Labo</a>
+        <a href="#" style="padding: 12px 0">Méthode</a>
+      </div>
+      <span style="font-family: 'Geist Mono', monospace; font-size: 11px; letter-spacing: 1.2px; color: #8C95AB; border: 1px solid #1E2436; border-radius: 999px; padding: 6px 12px">SIMULATION ILLUSTRATIVE</span>
+    </nav>
+
+    <header style="display: flex; justify-content: space-between; align-items: flex-end; padding-top: 44px">
+      <div style="display: flex; flex-direction: column; gap: 10px">
+        <span style="font-family: 'Geist Mono', monospace; font-size: 12px; letter-spacing: 2px; color: #9CC2FF">LABO DE DÉGRADATION</span>
+        <h1 style="margin: 0; font-family: 'Geist', system-ui, sans-serif; font-weight: 200; font-size: 60px; line-height: 1; letter-spacing: -2.2px">Jusqu’où voit-on <span style="color: #9CC2FF">une manœuvre ?</span></h1>
+      </div>
+      <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px">
+        <span style="font-size: 12px; color: #8C95AB">Plus petite manœuvre détectée à 90 %</span>
+        <span style="font-family: 'Geist', system-ui, sans-serif; font-weight: 200; font-size: 52px; line-height: 1; letter-spacing: -1.5px; color: #F4A259">{{dvMin}}</span>
+      </div>
+    </header>
+
+    <div style="display: flex; gap: 48px; margin-top: 36px">
+      <aside style="width: 340px; display: flex; flex-direction: column; gap: 26px">
+        <div style="display: flex; flex-direction: column; gap: 10px">
+          <span style="font-family: 'Geist Mono', monospace; font-size: 11px; letter-spacing: 1.5px; color: #8C95AB">QUALITÉ DES DONNÉES</span>
+          <div style="display: flex; gap: 8px" role="group" aria-label="Préréglages">
+            <sc-for list="{{presets}}" as="pr" hint-placeholder-count="3">
+              <button onClick="{{pr.pick}}" style="flex-grow: 1; height: 44px; border-radius: 999px; font-family: 'Geist', sans-serif; font-size: 13px; cursor: pointer; background: {{pr.bg}}; color: {{pr.fg}}; border: 1px solid {{pr.bd}}">{{pr.label}}</button>
+            </sc-for>
+          </div>
+        </div>
+        <sc-for list="{{sliders}}" as="sl" hint-placeholder-count="4">
+          <div style="display: flex; flex-direction: column; gap: 8px">
+            <div style="display: flex; justify-content: space-between; align-items: baseline">
+              <label for="{{sl.id}}" style="font-size: 14px">{{sl.label}}</label>
+              <span style="font-family: 'Geist Mono', monospace; font-size: 14px; color: #9CC2FF">{{sl.value}}</span>
+            </div>
+            <input id="{{sl.id}}" type="range" min="0" max="{{sl.max}}" step="1" value="{{sl.v}}" onChange="{{sl.on}}" style="width: 100%; height: 24px; accent-color: #9CC2FF; cursor: pointer; margin: 0">
+            <div style="display: flex; justify-content: space-between; font-family: 'Geist Mono', monospace; font-size: 11px; color: #5E6782"><span>{{sl.lo}}</span><span>{{sl.hi}}</span></div>
+          </div>
+        </sc-for>
+        <div style="border: 1px solid #1E2436; border-radius: 16px; padding: 20px; background: rgba(12,16,32,0.7); display: flex; flex-direction: column; gap: 12px">
+          <div style="display: flex; align-items: center; gap: 10px">
+            <span style="width: 10px; height: 10px; border-radius: 50%; background: {{res.dot}}; box-shadow: 0 0 12px {{res.dot}}"></span>
+            <span style="font-family: 'Geist', system-ui, sans-serif; font-weight: 300; font-size: 22px; letter-spacing: -0.5px">{{res.verdict}}</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 13px"><span style="color: #8C95AB">Score z maximal</span><span style="font-family: 'Geist Mono', monospace">{{res.z}}</span></div>
+          <div style="display: flex; justify-content: space-between; font-size: 13px"><span style="color: #8C95AB">Bruit par point moyenné</span><span style="font-family: 'Geist Mono', monospace">{{res.sig}}</span></div>
+          <div style="display: flex; justify-content: space-between; font-size: 13px"><span style="color: #8C95AB">Saut de demi-grand axe</span><span style="font-family: 'Geist Mono', monospace">{{res.da}}</span></div>
+        </div>
+      </aside>
+
+      <div style="width: 908px; display: flex; flex-direction: column; gap: 12px">
+        <div style="display: flex; justify-content: space-between; font-size: 12px; color: #8C95AB">
+          <span>Demi-grand axe moyen · fenêtre de 10 jours</span>
+          <span style="font-family: 'Geist Mono', monospace">1 point = {{res.bin}}</span>
+        </div>
+        <div style="position: relative; width: 908px; height: 300px; border-top: 1px solid #161B2A; border-bottom: 1px solid #161B2A">
+          <svg width="908" height="300" viewBox="0 0 908 300" aria-label="Série simulée et détection">
+            <path d="{{ch.grid}}" stroke="#141A29" stroke-width="1" fill="none"></path>
+            <path d="{{ch.manLine}}" stroke="#5E6782" stroke-width="1" stroke-dasharray="3 5" fill="none"></path>
+            <path d="{{ch.truth}}" stroke="#9CC2FF" stroke-opacity="0.35" stroke-width="1" fill="none"></path>
+            <path d="{{ch.dots}}" stroke="#9CC2FF" stroke-width="{{ch.dotW}}" stroke-linecap="round" fill="none"></path>
+            <path d="{{ch.detLine}}" stroke="{{ch.detColor}}" stroke-width="1.5" fill="none"></path>
+          </svg>
+          <span style="position: absolute; top: 10px; left: {{ch.manX}}px; font-family: 'Geist Mono', monospace; font-size: 11px; color: #8C95AB">MANŒUVRE RÉELLE</span>
+          <sc-if value="{{ch.hasDet}}" hint-placeholder-val="{{ true }}">
+            <span style="position: absolute; bottom: 10px; left: {{ch.detX}}px; font-family: 'Geist Mono', monospace; font-size: 11px; color: {{ch.detColor}}">{{ch.detLabel}}</span>
+          </sc-if>
+          <span style="position: absolute; right: 0; top: 10px; font-family: 'Geist Mono', monospace; font-size: 11px; color: #5E6782">{{ch.yTop}}</span>
+          <span style="position: absolute; right: 0; bottom: 10px; font-family: 'Geist Mono', monospace; font-size: 11px; color: #5E6782">{{ch.yBot}}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-family: 'Geist Mono', monospace; font-size: 11px; color: #5E6782"><span>J0</span><span>J2</span><span>J4</span><span>J6</span><span>J8</span><span>J10</span></div>
+
+        <div style="display: flex; justify-content: space-between; align-items: baseline; margin-top: 18px">
+          <span style="font-size: 12px; color: #8C95AB">Carte de robustesse · probabilité de détection</span>
+          <span style="font-family: 'Geist Mono', monospace; font-size: 11px; color: #5E6782">cadre orange = réglage actuel</span>
+        </div>
+        <div style="display: flex; gap: 10px">
+          <div style="display: flex; flex-direction: column; justify-content: space-around; width: 64px; font-family: 'Geist Mono', monospace; font-size: 11px; color: #5E6782; text-align: right">
+            <sc-for list="{{hm.rowLabels}}" as="rl" hint-placeholder-count="7"><span>{{rl}}</span></sc-for>
+          </div>
+          <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 3px">
+            <sc-for list="{{hm.rows}}" as="row" hint-placeholder-count="7">
+              <div style="display: grid; grid-template-columns: repeat(11, minmax(0, 1fr)); gap: 3px">
+                <sc-for list="{{row.cells}}" as="c" hint-placeholder-count="11">
+                  <div style="height: 26px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-family: 'Geist Mono', monospace; font-size: 10px; background: {{c.bg}}; color: {{c.fg}}; box-shadow: inset 0 0 0 {{c.ring}}px #F4A259">{{c.txt}}</div>
+                </sc-for>
+              </div>
+            </sc-for>
+            <div style="display: grid; grid-template-columns: repeat(11, minmax(0, 1fr)); gap: 3px; font-family: 'Geist Mono', monospace; font-size: 10px; color: #5E6782; text-align: center; margin-top: 4px">
+              <sc-for list="{{hm.colLabels}}" as="cl" hint-placeholder-count="11"><span>{{cl}}</span></sc-for>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 11px; color: #5E6782; margin-top: 2px"><span>Δv (vertical) · bruit de position (horizontal)</span><span>moins précis →</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <footer style="position: absolute; top: 936px; left: 72px; right: 72px; display: flex; justify-content: space-between; font-family: 'Geist Mono', monospace; font-size: 11px; color: #5E6782">
+      <span>Contains modified Copernicus Sentinel data [année]</span>
+      <span>Maquette — modèle de bruit simplifié</span>
+    </footer>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":980}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { ns: 0, np: 100, nr: 0, nd: 50, preset: 'pod' }; }
+  rng(seed) { let a = seed >>> 0; return function () { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+  init() {
+    const r = this.rng(11), N = [];
+    for (let i = 0; i < 146; i++) { const u = Math.max(1e-9, r()), v = r(); N.push(Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v)); }
+    const rs = this.rng(5), stars = [];
+    for (let i = 0; i < 90; i++) stars.push({ x: Math.round(rs() * 1440), y: Math.round(rs() * 980), s: rs() < 0.85 ? 1 : 2, o: (0.15 + rs() * 0.5).toFixed(2) });
+    return { N: N, stars: stars };
+  }
+  phi(x) { const t = 1 / (1 + 0.3275911 * Math.abs(x) / Math.SQRT2); const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x / 2); return 0.5 * (1 + (x >= 0 ? y : -y)); }
+  renderVals() {
+    if (!this._c) this._c = this.init();
+    const C = this._c, s = this.state;
+    const nf = (v, d) => v.toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d });
+    const fmtLen = (m) => m < 1 ? nf(m * 100, m < 0.1 ? 1 : 0) + ' cm' : m < 1000 ? nf(m, m < 10 ? 1 : 0) + ' m' : nf(m / 1000, 1) + ' km';
+    const fmtDv = (cm) => cm < 1 ? nf(cm * 10, 1) + ' mm/s' : nf(cm, 1) + ' cm/s';
+    const sigma = 0.01 * Math.pow(10, s.ns / 20);
+    const p = Math.pow(10, s.np / 100 * Math.log10(8640));
+    const rho = s.nr / 100;
+    const dv = 0.1 * Math.pow(10, s.nd / 50);
+    const revDays = 98.6 / 1440;
+    const daOf = (cm) => 2 * 7.071e6 * (cm / 100) / 7504;
+    const binOf = (sg) => { const n = p * revDays; const b = Math.max(1, Math.ceil(1 / n)); const m = n * b; return { b: b, m: m, nb: Math.floor(146 / b), sig: 3.4 * sg * Math.sqrt((1 + (m - 1) * rho) / m) }; };
+    const B = binOf(sigma), binDays = B.b * revDays, tman = 5.02, da = daOf(dv);
+    const vals = [];
+    for (let i = 0; i < B.nb; i++) { const tc = (i + 0.5) * binDays; vals.push({ t: tc, v: -18 * tc + (tc > tman ? da : 0) + B.sig * C.N[i] }); }
+    let status = 'insuf', zmax = 0, tk = 0;
+    if (B.nb >= 6) {
+      const d = []; for (let i = 0; i < vals.length - 1; i++) d.push(vals[i + 1].v - vals[i].v);
+      const med = (arr) => { const q = arr.slice().sort((x, y) => x - y); const h = Math.floor(q.length / 2); return q.length % 2 ? q[h] : (q[h - 1] + q[h]) / 2; };
+      const md = med(d); const mad = Math.max(1e-9, 1.4826 * med(d.map((x) => Math.abs(x - md))));
+      let k = 0; d.forEach((x, i) => { const z = Math.abs((x - md) / mad); if (z > zmax) { zmax = z; k = i; } });
+      tk = (k + 1) * binDays;
+      const ok = Math.abs(tk - tman) <= binDays + revDays;
+      status = zmax >= 5 ? (ok ? 'det' : 'fa') : 'miss';
+    }
+    const W = 908, H = 300;
+    const allV = vals.map((x) => x.v).concat([0, -180 + da]);
+    let lo = Math.min.apply(null, allV), hi = Math.max.apply(null, allV); const pad = (hi - lo) * 0.12 + 1; lo -= pad; hi += pad;
+    const X = (t) => t / 10 * W, Y = (v) => 24 + (hi - v) / (hi - lo) * (H - 48);
+    let dots = ''; vals.forEach((x) => { dots += 'M' + X(x.t).toFixed(1) + ' ' + Y(x.v).toFixed(1) + 'h0.01'; });
+    const truth = 'M0 ' + Y(0).toFixed(1) + 'L' + X(tman).toFixed(1) + ' ' + Y(-18 * tman).toFixed(1) + 'L' + X(tman).toFixed(1) + ' ' + Y(-18 * tman + da).toFixed(1) + 'L' + W + ' ' + Y(-180 + da).toFixed(1);
+    let grid = ''; for (let k = 1; k < 10; k++) grid += 'M' + (k * W / 10) + ' 0V' + H;
+    const hasDet = status === 'det' || status === 'fa';
+    const detColor = status === 'det' ? '#F4A259' : '#E8ECF4';
+    const verdicts = { det: ['Manœuvre détectée', '#F4A259'], fa: ['Fausse alarme', '#E8ECF4'], miss: ['Noyée dans le bruit', '#5E6782'], insuf: ['Données insuffisantes', '#5E6782'] };
+    const res = { verdict: verdicts[status][0], dot: verdicts[status][1], z: B.nb >= 6 ? nf(zmax, 1) : '—', sig: fmtLen(B.sig), da: '+' + nf(da, da < 10 ? 1 : 0) + ' m', bin: B.b === 1 ? '1 révolution' : B.b + ' révolutions' };
+    const dvMinCm = B.nb >= 6 ? (6.28 * Math.SQRT2 * B.sig) * 7504 / (2 * 7.071e6) * 100 : null;
+    const setP = (o) => this.setState(Object.assign({ preset: null }, o));
+    const presetDefs = [
+      { id: 'pod', label: 'POD Copernicus', v: { ns: 0, np: 100, nr: 0 } },
+      { id: 'radar', label: 'Radar', v: { ns: 70, np: 35, nr: 30 } },
+      { id: 'tle', label: 'Type TLE', v: { ns: 100, np: 8, nr: 80 } }
+    ];
+    const presets = presetDefs.map((q) => ({ label: q.label, bg: s.preset === q.id ? '#9CC2FF' : 'transparent', fg: s.preset === q.id ? '#06080E' : '#8C95AB', bd: s.preset === q.id ? '#9CC2FF' : '#1E2436', pick: () => this.setState(Object.assign({ preset: q.id }, q.v)) }));
+    const sliders = [
+      { id: 'sl-noise', label: 'Bruit de position', v: s.ns, max: 100, value: fmtLen(sigma), lo: '1 cm', hi: '1 km', on: (e) => setP({ ns: Number(e.target.value) }) },
+      { id: 'sl-rate', label: 'Points par jour', v: s.np, max: 100, value: nf(Math.round(p), 0), lo: '1', hi: '8 640', on: (e) => setP({ np: Number(e.target.value) }) },
+      { id: 'sl-corr', label: 'Corrélation des erreurs', v: s.nr, max: 95, value: nf(rho, 2), lo: '0', hi: '0,95', on: (e) => setP({ nr: Number(e.target.value) }) },
+      { id: 'sl-dv', label: 'Taille de la manœuvre', v: s.nd, max: 100, value: fmtDv(dv), lo: '0,1 mm/s', hi: '10 cm/s', on: (e) => this.setState({ nd: Number(e.target.value) }) }
+    ];
+    const sigL = [0.01, 0.03, 0.1, 0.3, 1, 3, 10, 30, 100, 300, 1000];
+    const dvL = [10, 5, 2, 1, 0.5, 0.2, 0.1];
+    const ci = sigL.reduce((bi, x, i) => Math.abs(Math.log10(x) - Math.log10(sigma)) < Math.abs(Math.log10(sigL[bi]) - Math.log10(sigma)) ? i : bi, 0);
+    const ri = dvL.reduce((bi, x, i) => Math.abs(Math.log10(x) - Math.log10(dv)) < Math.abs(Math.log10(dvL[bi]) - Math.log10(dv)) ? i : bi, 0);
+    const rows = dvL.map((d, r) => ({ cells: sigL.map((sg, c) => {
+      const bb = binOf(sg); const P = bb.nb >= 6 ? this.phi(daOf(d) / (Math.SQRT2 * bb.sig) - 5) : 0;
+      return { bg: 'rgba(156,194,255,' + (0.05 + 0.85 * P).toFixed(3) + ')', fg: P > 0.55 ? '#06080E' : '#5E6782', txt: Math.round(P * 100) + '', ring: r === ri && c === ci ? 2 : 0 };
+    }) }));
+    return {
+      stars: C.stars, presets: presets, sliders: sliders, res: res,
+      dvMin: dvMinCm === null ? '—' : fmtDv(dvMinCm),
+      ch: { grid: grid, dots: dots, dotW: B.nb > 60 ? 4 : 6, truth: truth, manLine: 'M' + X(tman).toFixed(1) + ' 0V' + H, manX: (X(tman) + 8).toFixed(1), hasDet: hasDet, detLine: hasDet ? 'M' + X(tk).toFixed(1) + ' 0V' + H : 'M0 0', detX: (X(tk) + 8).toFixed(1), detColor: detColor, detLabel: (status === 'det' ? 'DÉTECTION' : 'ALARME') + ' · z = ' + nf(zmax, 1), yTop: nf(hi, 0) + ' m', yBot: nf(lo, 0) + ' m' },
+      hm: { rows: rows, rowLabels: dvL.map(fmtDv), colLabels: sigL.map(fmtLen) }
+    };
+  }
+}
+</script>
+</body>
+</html>
