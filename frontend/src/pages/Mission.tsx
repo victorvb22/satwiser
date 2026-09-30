@@ -1,4 +1,4 @@
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { scaleLinear } from "d3-scale";
 import { area, line } from "d3-shape";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -7,13 +7,10 @@ import { Link, useSearchParams } from "react-router-dom";
 import {
   queries,
   useEvent,
-  useEvents,
   useOverview,
   useSatellites,
-  useSeries,
   type EventSummary,
   type Satellite,
-  type Series,
 } from "../api/client";
 import { ErrorNote, Loading } from "../components/Layout";
 import { CLASS_LABEL, dateFr, dv, ESA_TYPE_LABEL, KIND_LABEL, MONTHS_SHORT, num, signed,
@@ -25,9 +22,33 @@ const H = 340;
 const SOLAR_H = 44;
 const OVERVIEW_H = 36;
 const R_EARTH = 6378137.0;
+const DAY = 86_400_000;
+const MIN_SPAN = 5 * DAY;
+const EDGE_PX = 10;
 
-function yearBounds(year: number): [number, number] {
+type Range = [number, number];
+
+interface Merged {
+  orbit: number[];
+  t: number[];
+  a: (number | null)[];
+  f107: (number | null)[];
+}
+
+// ------------------------------------------------------------------------- helpers
+
+function yearRange(year: number): Range {
   return [Date.UTC(year, 0, 1), Date.UTC(year + 1, 0, 1)];
+}
+
+function exactYear([t0, t1]: Range): number | null {
+  const y = new Date(t0).getUTCFullYear();
+  const [y0, y1] = yearRange(y);
+  return t0 === y0 && t1 === y1 ? y : null;
+}
+
+function isoDay(t: number): string {
+  return new Date(t).toISOString().slice(0, 10);
 }
 
 function quantile(sorted: number[], q: number): number {
@@ -43,22 +64,108 @@ function niceSpan(values: number[]): number {
   return steps.find((s) => s >= max * 1.08) ?? Math.ceil(max / 500) * 500;
 }
 
+/** Tick marks adapted to the displayed span: days, months or years. */
+function ticks([t0, t1]: Range): { t: number; label: string }[] {
+  const span = t1 - t0;
+  const out: { t: number; label: string }[] = [];
+  if (span <= 60 * DAY) {
+    const step = [1, 2, 5, 7, 10].find((s) => span / (s * DAY) <= 12) ?? 10;
+    const d = new Date(t0);
+    let t = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+    if (t < t0) t += DAY;
+    for (; t <= t1; t += step * DAY) {
+      const dt = new Date(t);
+      out.push({ t, label: `${dt.getUTCDate()} ${MONTHS_SHORT[dt.getUTCMonth()]}` });
+    }
+  } else if (span <= 3.2 * 365 * DAY) {
+    const step = [1, 2, 3, 6].find((s) => span / (s * 30.4 * DAY) <= 13) ?? 6;
+    const d = new Date(t0);
+    let y = d.getUTCFullYear();
+    let m = Math.ceil((d.getUTCMonth() + (d.getUTCDate() > 1 ? 1 : 0)) / step) * step;
+    for (;;) {
+      if (m >= 12) { y += Math.floor(m / 12); m %= 12; }
+      const t = Date.UTC(y, m, 1);
+      if (t > t1) break;
+      if (t >= t0) out.push({ t, label: m === 0 ? String(y) : MONTHS_SHORT[m] });
+      m += step;
+    }
+  } else {
+    const step = span > 8 * 365 * DAY ? 2 : 1;
+    for (let y = new Date(t0).getUTCFullYear(); ; y++) {
+      const t = Date.UTC(y, 0, 1);
+      if (t > t1) break;
+      if (t >= t0 && y % step === 0) out.push({ t, label: String(y) });
+    }
+  }
+  return out;
+}
+
+function rangeLabel(range: Range): string {
+  const y = exactYear(range);
+  return y !== null ? String(y) : `${dateFr(isoDay(range[0]))} → ${dateFr(isoDay(range[1] - 1))}`;
+}
+
+// ---------------------------------------------------------------------- data access
+
+/** Series and events for an arbitrary range, assembled from the per-year endpoints. */
+function useRangeData(sat: Satellite, [t0, t1]: Range) {
+  const years = sat.years.filter((y) => {
+    const [y0, y1] = yearRange(y);
+    return y1 > t0 && y0 < t1;
+  });
+  const seriesQs = useQueries({ queries: years.map((y) => queries.series(sat.id, y)) });
+  const eventQs = useQueries({ queries: years.map((y) => queries.events(sat.id, y)) });
+  const seriesReady = seriesQs.every((q) => q.data);
+  const eventsReady = eventQs.every((q) => q.data);
+  const seriesStamp = seriesQs.map((q) => q.dataUpdatedAt).join();
+  const eventStamp = eventQs.map((q) => q.dataUpdatedAt).join();
+
+  const merged = useMemo<Merged | null>(() => {
+    if (!seriesReady) return null;
+    const out: Merged = { orbit: [], t: [], a: [], f107: [] };
+    for (const q of seriesQs) {
+      const s = q.data!;
+      for (let k = 0; k < s.t_ms.length; k++) {
+        if (s.t_ms[k] < t0 || s.t_ms[k] >= t1) continue;
+        out.orbit.push(s.orbit[k]);
+        out.t.push(s.t_ms[k]);
+        out.a.push(s.a_m[k]);
+        out.f107.push(s.f107[k]);
+      }
+    }
+    return out;
+  }, [seriesReady, seriesStamp, t0, t1]);
+
+  const events = useMemo<EventSummary[] | null>(() => {
+    if (!eventsReady) return null;
+    return eventQs.flatMap((q) => q.data!).filter((e) => {
+      const t = Date.parse(e.time);
+      return e.kind !== "unscored" && t >= t0 && t < t1;
+    });
+  }, [eventsReady, eventStamp, t0, t1]);
+
+  return { series: merged, events, error: seriesQs.some((q) => q.isError), years };
+}
+
+// --------------------------------------------------------------------------- charts
+
 interface ChartProps {
-  series: Series;
+  range: Range;
+  series: Merged;
   events: EventSummary[];
   selected: string | null;
   onSelect: (id: string) => void;
+  animate: string;
 }
 
-function SeriesChart({ series, events, selected, onSelect }: ChartProps) {
-  const [t0, t1] = yearBounds(series.year);
-  const x = scaleLinear().domain([t0, t1]).range([0, W]);
-  const valid = series.a_m.filter((v): v is number => v !== null);
+function SeriesChart({ range, series, events, selected, onSelect, animate }: ChartProps) {
+  const x = scaleLinear().domain(range).range([0, W]);
+  const valid = series.a.filter((v): v is number => v !== null);
   const centre = valid.length ? [...valid].sort((p, q) => p - q)[Math.floor(valid.length / 2)] : 0;
-  const rel = series.a_m.map((v) => (v === null ? null : v - centre));
+  const rel = series.a.map((v) => (v === null ? null : v - centre));
   const span = niceSpan(rel.filter((v): v is number => v !== null));
   const y = scaleLinear().domain([-span, span]).range([H - 6, 6]);
-  const reduced = lttb(series.t_ms, rel, 1600);
+  const reduced = lttb(series.t, rel, 1600);
   const path = line<number>().x((_, k) => x(reduced.x[k])).y((v) => y(v))(reduced.y) ?? "";
   const byOrbit = new Map(series.orbit.map((o, k) => [o, rel[k]]));
   const valueNear = (orbit: number, after: boolean) => {
@@ -68,50 +175,60 @@ function SeriesChart({ series, events, selected, onSelect }: ChartProps) {
     }
     return 0;
   };
+  const marks = ticks(range);
   let grid = "";
-  for (let k = 0; k <= 12; k++) grid += `M${(k * W / 12).toFixed(1)} 0V${H}`;
+  for (const m of marks) grid += `M${x(m.t).toFixed(1)} 0V${H}`;
   grid += `M0 ${y(span / 2).toFixed(1)}H${W}M0 ${y(-span / 2).toFixed(1)}H${W}`;
 
   return (
-    <div className="chart-frame fade-in" key={series.year}>
-      <svg viewBox={`0 0 ${W} ${H}`} role="img"
-           aria-label={`Demi-grand axe moyen par révolution en ${series.year}`}>
-        <defs><clipPath id="plot-area"><rect x="0" y="0" width={W} height={H} /></clipPath></defs>
-        <path d={grid} stroke="var(--grid)" strokeWidth="1" fill="none" />
-        <path d={`M0 ${y(0)}H${W}`} stroke="#232B40" strokeDasharray="2 6" fill="none" />
-        <g clipPath="url(#plot-area)">
-          <path d={path} stroke="var(--data)" strokeWidth="7" strokeOpacity="0.1" fill="none"
-                strokeLinejoin="round" />
-          <path d={path} stroke="var(--data)" strokeWidth="1.3" fill="none" strokeLinejoin="round" />
-        </g>
-      </svg>
-      <span className="axis-label" style={{ left: 0, top: 0 }}>+{num(span, 0)} m</span>
-      <span className="axis-label" style={{ left: 0, bottom: 0 }}>−{num(span, 0)} m</span>
-      {events.map((e) => {
-        const t = Date.parse(e.time);
-        const v = valueNear(e.orbit, e.kind === "detected" || e.kind === "missed");
-        return (
-          <button key={e.id} className={`marker ${e.kind}`} aria-pressed={e.id === selected}
-                  aria-label={`${KIND_LABEL[e.kind]}, ${dateFr(e.time)}`}
-                  style={{ left: `${(x(t) / W) * 100}%`,
-                           top: `${(Math.min(Math.max(y(v), 4), H - 4) / H) * 100}%` }}
-                  onClick={() => onSelect(e.id)}>
-            <span />
-          </button>
-        );
-      })}
+    <div className="chart-stack" style={{ gap: 14 }}>
+      <div className="chart-frame fade-in" key={animate}>
+        <svg viewBox={`0 0 ${W} ${H}`} role="img"
+             aria-label={`Demi-grand axe moyen par révolution, ${rangeLabel(range)}`}>
+          <defs><clipPath id="plot-area"><rect x="0" y="0" width={W} height={H} /></clipPath></defs>
+          <path d={grid} stroke="var(--grid)" strokeWidth="1" fill="none" />
+          <path d={`M0 ${y(0)}H${W}`} stroke="#232B40" strokeDasharray="2 6" fill="none" />
+          <g clipPath="url(#plot-area)">
+            <path d={path} stroke="var(--data)" strokeWidth="7" strokeOpacity="0.1" fill="none"
+                  strokeLinejoin="round" />
+            <path d={path} stroke="var(--data)" strokeWidth="1.3" fill="none"
+                  strokeLinejoin="round" />
+          </g>
+        </svg>
+        <span className="axis-label" style={{ left: 0, top: 0 }}>+{num(span, 0)} m</span>
+        <span className="axis-label" style={{ left: 0, bottom: 0 }}>−{num(span, 0)} m</span>
+        {events.map((e) => {
+          const t = Date.parse(e.time);
+          const v = valueNear(e.orbit, e.kind === "detected" || e.kind === "missed");
+          return (
+            <button key={e.id} className={`marker ${e.kind}`} aria-pressed={e.id === selected}
+                    aria-label={`${KIND_LABEL[e.kind]}, ${dateFr(e.time)}`}
+                    style={{ left: `${(x(t) / W) * 100}%`,
+                             top: `${(Math.min(Math.max(y(v), 4), H - 4) / H) * 100}%` }}
+                    onClick={() => onSelect(e.id)}>
+              <span />
+            </button>
+          );
+        })}
+      </div>
+      <div className="ticks" aria-hidden="true">
+        {marks.map((m) => (
+          <span key={m.t} style={{ left: `${(x(m.t) / W) * 100}%` }}>{m.label}</span>
+        ))}
+      </div>
     </div>
   );
 }
 
-function SolarBand({ series }: { series: Series }) {
-  const [t0, t1] = yearBounds(series.year);
-  const x = scaleLinear().domain([t0, t1]).range([0, W]);
+function SolarBand({ range, series }: { range: Range; series: Merged }) {
+  const x = scaleLinear().domain(range).range([0, W]);
   const y = scaleLinear().domain([50, 300]).range([SOLAR_H, 2]).clamp(true);
-  const pts = series.t_ms.map((t, k) => [t, series.f107[k]] as const)
+  const pts = series.t.map((t, k) => [t, series.f107[k]] as const)
     .filter((p): p is readonly [number, number] => p[1] !== null);
-  const l = line<readonly [number, number]>().x((p) => x(p[0])).y((p) => y(p[1]))(pts) ?? "";
-  const a = area<readonly [number, number]>().x((p) => x(p[0])).y0(SOLAR_H).y1((p) => y(p[1]))(pts) ?? "";
+  const reduced = pts.length > 2000 ? pts.filter((_, k) => k % Math.ceil(pts.length / 2000) === 0) : pts;
+  const l = line<readonly [number, number]>().x((p) => x(p[0])).y((p) => y(p[1]))(reduced) ?? "";
+  const a = area<readonly [number, number]>().x((p) => x(p[0])).y0(SOLAR_H)
+    .y1((p) => y(p[1]))(reduced) ?? "";
   return (
     <svg viewBox={`0 0 ${W} ${SOLAR_H}`} aria-hidden="true" style={{ width: "100%", height: "auto" }}>
       <path d={a} fill="var(--event)" fillOpacity="0.1" />
@@ -120,11 +237,25 @@ function SolarBand({ series }: { series: Series }) {
   );
 }
 
-function OverviewStrip({ sat, year, onYear }: { sat: Satellite; year: number;
-                                                onYear: (y: number) => void }) {
+type DragMode = "move" | "left" | "right";
+
+interface OverviewProps {
+  sat: Satellite;
+  range: Range;
+  onDraft: (r: Range | null) => void;
+  onCommit: (r: Range) => void;
+}
+
+/**
+ * Whole-mission strip with the displayed window. Drag the window to pan, drag either
+ * edge to zoom, click elsewhere to centre the window there. Keyboard: arrows pan,
+ * Shift + arrows resize, Home/End jump to the mission ends.
+ */
+function OverviewStrip({ sat, range, onDraft, onCommit }: OverviewProps) {
   const { data } = useOverview(sat.id);
   const ref = useRef<HTMLDivElement>(null);
-  const dragging = useRef(false);
+  const drag = useRef<{ mode: DragMode; start: Range; t: number } | null>(null);
+  const draft = useRef<Range | null>(null);
   const first = Date.UTC(sat.years[0], 0, 1);
   const last = Date.UTC(sat.years[sat.years.length - 1] + 1, 0, 1);
   const x = scaleLinear().domain([first, last]).range([0, W]);
@@ -139,38 +270,98 @@ function OverviewStrip({ sat, year, onYear }: { sat: Satellite; year: number;
     const y = scaleLinear().domain([lo, hi]).range([OVERVIEW_H - 3, 3]).clamp(true);
     return line<number>().x((_, k) => x(reduced.x[k])).y((v) => y(v))(vals) ?? "";
   }, [data, x, sat.operational_start]);
-  const pick = (clientX: number) => {
-    const box = ref.current?.getBoundingClientRect();
-    if (!box) return;
-    const t = x.invert(((clientX - box.left) / box.width) * W);
-    const y = new Date(t).getUTCFullYear();
-    if (sat.years.includes(y) && y !== year) onYear(y);
+
+  const clamp = ([t0, t1]: Range): Range => {
+    const span = Math.min(Math.max(t1 - t0, MIN_SPAN), last - first);
+    let a = t0, b = t0 + span;
+    if (a < first) { a = first; b = first + span; }
+    if (b > last) { b = last; a = last - span; }
+    return [Math.round(a), Math.round(b)];
   };
-  const [y0, y1] = yearBounds(year);
+  const timeAt = (clientX: number) => {
+    const box = ref.current!.getBoundingClientRect();
+    return x.invert(((clientX - box.left) / box.width) * W);
+  };
+  const pxPerMs = () => ref.current!.getBoundingClientRect().width / (last - first);
+  const update = (r: Range) => { draft.current = r; onDraft(r); };
+
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    const t = timeAt(e.clientX);
+    const tol = EDGE_PX / pxPerMs();
+    const [t0, t1] = range;
+    let mode: DragMode = "move";
+    let start = range;
+    if (Math.abs(t - t0) <= tol) mode = "left";
+    else if (Math.abs(t - t1) <= tol) mode = "right";
+    else if (t < t0 || t > t1) {
+      start = clamp([t - (t1 - t0) / 2, t + (t1 - t0) / 2]);
+      update(start);
+    }
+    drag.current = { mode, start, t };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!drag.current) {
+      const t = timeAt(e.clientX);
+      const tol = EDGE_PX / pxPerMs();
+      const edge = Math.abs(t - range[0]) <= tol || Math.abs(t - range[1]) <= tol;
+      e.currentTarget.style.cursor = edge ? "ew-resize" : t >= range[0] && t <= range[1] ? "grab" : "pointer";
+      return;
+    }
+    const { mode, start, t } = drag.current;
+    const dt = timeAt(e.clientX) - t;
+    if (mode === "move") update(clamp([start[0] + dt, start[1] + dt]));
+    else if (mode === "left") update([Math.max(first, Math.min(start[0] + dt, start[1] - MIN_SPAN)), start[1]]);
+    else update([start[0], Math.min(last, Math.max(start[1] + dt, start[0] + MIN_SPAN))]);
+  };
+  const onPointerUp = () => {
+    if (drag.current && draft.current) onCommit(draft.current);
+    drag.current = null;
+    draft.current = null;
+    onDraft(null);
+  };
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    const [t0, t1] = range;
+    const span = t1 - t0;
+    const step = Math.max(span * 0.1, DAY);
+    let next: Range | null = null;
+    if (e.key === "ArrowRight") next = e.shiftKey ? [t0, t1 + step] : [t0 + step, t1 + step];
+    if (e.key === "ArrowLeft") next = e.shiftKey ? [t0, Math.max(t0 + MIN_SPAN, t1 - step)]
+                                                 : [t0 - step, t1 - step];
+    if (e.key === "Home") next = [first, first + span];
+    if (e.key === "End") next = [last - span, last];
+    if (next) {
+      e.preventDefault();
+      onCommit(clamp(next));
+    }
+  };
+
   return (
     <div className="overview" ref={ref} role="slider" tabIndex={0}
-         aria-label="Année dans la mission complète" aria-valuemin={sat.years[0]}
-         aria-valuemax={sat.years[sat.years.length - 1]} aria-valuenow={year}
-         onKeyDown={(e) => {
-           const k = sat.years.indexOf(year);
-           if (e.key === "ArrowRight" && k < sat.years.length - 1) onYear(sat.years[k + 1]);
-           if (e.key === "ArrowLeft" && k > 0) onYear(sat.years[k - 1]);
-         }}
-         onPointerDown={(e) => { dragging.current = true; e.currentTarget.setPointerCapture(e.pointerId); pick(e.clientX); }}
-         onPointerMove={(e) => { if (dragging.current) pick(e.clientX); }}
-         onPointerUp={() => { dragging.current = false; }}>
-      <svg viewBox={`0 0 ${W} ${OVERVIEW_H}`} aria-hidden="true" style={{ width: "100%", height: "auto", display: "block" }}>
+         aria-label="Fenêtre affichée dans la mission complète (glisser pour déplacer, tirer les bords pour zoomer)"
+         aria-valuemin={first} aria-valuemax={last} aria-valuenow={range[0]}
+         aria-valuetext={rangeLabel(range)}
+         onKeyDown={onKeyDown} onPointerDown={onPointerDown} onPointerMove={onPointerMove}
+         onPointerUp={onPointerUp} onPointerCancel={onPointerUp}>
+      <svg viewBox={`0 0 ${W} ${OVERVIEW_H}`} aria-hidden="true"
+           style={{ width: "100%", height: "auto", display: "block" }}>
         <path d={path} stroke="var(--faint)" strokeWidth="0.6" fill="none" />
       </svg>
       <span className="overview-frame"
-            style={{ left: `${(x(y0) / W) * 100}%`, width: `${((x(y1) - x(y0)) / W) * 100}%` }} />
+            style={{ left: `${(x(range[0]) / W) * 100}%`,
+                     width: `${((x(range[1]) - x(range[0])) / W) * 100}%` }}>
+        <span className="handle left" />
+        <span className="handle right" />
+      </span>
     </div>
   );
 }
 
+// ------------------------------------------------------------------------ event card
+
 function EventCard({ id, satellite }: { id: string | null; satellite: string }) {
   const { data: e, isLoading } = useEvent(id);
-  if (!id) return <div className="card"><span className="muted">Aucun événement cette année.</span></div>;
+  if (!id) return <div className="card"><span className="muted">Aucun événement sur cette période.</span></div>;
   if (isLoading || !e) return <div className="card skeleton" style={{ height: 330 }} />;
   const title = e.kind === "missed" ? "Manœuvre manquée"
     : e.kind === "false_alarm" ? "Fausse alarme"
@@ -222,36 +413,60 @@ function EventCard({ id, satellite }: { id: string | null; satellite: string }) 
   );
 }
 
+// ---------------------------------------------------------------------------- page
+
 function MissionView({ sat }: { sat: Satellite }) {
   const [params, setParams] = useSearchParams();
   const client = useQueryClient();
-  const year = Number(params.get("annee")) || sat.years[sat.years.length - 2] || sat.years[0];
-  const setYear = (y: number) => setParams({ annee: String(y) }, { replace: true });
-  const series = useSeries(sat.id, year);
-  const events = useEvents(sat.id, year);
+  const defaultYear = sat.years[sat.years.length - 2] ?? sat.years[0];
+  const committed = useMemo<Range>(() => {
+    const d = Date.parse(`${params.get("debut")}T00:00:00Z`);
+    const f = Date.parse(`${params.get("fin")}T00:00:00Z`);
+    if (Number.isFinite(d) && Number.isFinite(f) && f - d >= MIN_SPAN) return [d, f];
+    return yearRange(Number(params.get("annee")) || defaultYear);
+  }, [params, defaultYear]);
+  const [draft, setDraft] = useState<Range | null>(null);
+  const range = draft ?? committed;
+  const commit = (r: Range) => {
+    const y = exactYear(r);
+    setParams(y !== null ? { annee: String(y) } : { debut: isoDay(r[0]), fin: isoDay(r[1]) },
+              { replace: true });
+  };
+  const { series, events, error, years } = useRangeData(sat, range);
   const [selected, setSelected] = useState<string | null>(null);
-  const shown = useMemo(() => (events.data ?? []).filter((e) => e.kind !== "unscored"), [events.data]);
+  const shown = useMemo(() => events ?? [], [events]);
 
   useEffect(() => {
+    if (draft) return;
     if (!shown.length) return setSelected(null);
     if (selected && shown.some((e) => e.id === selected)) return;
     const preferred = shown.find((e) => e.id === sat.default_lab_event)
       ?? shown.find((e) => e.kind === "detected") ?? shown[0];
     setSelected(preferred.id);
-  }, [shown, selected, sat.default_lab_event]);
+  }, [shown, selected, sat.default_lab_event, draft]);
 
   useEffect(() => {
-    for (const y of [year - 1, year + 1]) {
+    const lo = Math.min(...years) - 1;
+    const hi = Math.max(...years) + 1;
+    for (const y of [lo, hi]) {
       if (sat.years.includes(y)) {
         void client.prefetchQuery(queries.series(sat.id, y));
         void client.prefetchQuery(queries.events(sat.id, y));
       }
     }
-  }, [client, sat, year]);
+  }, [client, sat, years]);
 
-  const counts = sat.summary.by_year[String(year)];
-  const meanA = series.data ? series.data.a_m.filter((v): v is number => v !== null) : [];
+  const counts = useMemo(() => {
+    if (!events) return null;
+    const detected = events.filter((e) => e.kind === "detected").length;
+    const missed = events.filter((e) => e.kind === "missed").length;
+    return { esa: detected + missed, detected, missed,
+             fa: events.filter((e) => e.kind === "false_alarm").length };
+  }, [events]);
+  const meanA = series ? series.a.filter((v): v is number => v !== null) : [];
   const altitude = meanA.length ? meanA.reduce((s, v) => s + v, 0) / meanA.length - R_EARTH : null;
+  const year = exactYear(committed);
+  const opsStart = Date.parse(`${sat.operational_start}T00:00:00Z`);
 
   return (
     <>
@@ -269,46 +484,54 @@ function MissionView({ sat }: { sat: Satellite }) {
         </div>
         <div className="pills" role="group" aria-label="Année affichée">
           {sat.years.map((y) => (
-            <button key={y} className="pill" aria-pressed={y === year} onClick={() => setYear(y)}>
+            <button key={y} className="pill" aria-pressed={y === year} onClick={() => commit(yearRange(y))}>
               {y}
             </button>
           ))}
         </div>
       </header>
 
-      <section className="stats" aria-label={`Bilan ${year}`}>
+      <section className="stats" aria-label={`Bilan ${rangeLabel(range)}`}>
         <div className="stat"><span className="label">Manœuvres étiquetées ESA</span>
-          <span className="value">{counts?.esa_manoeuvres ?? "—"}</span></div>
+          <span className="value">{counts?.esa ?? "—"}</span></div>
         <div className="stat"><span className="label">Détectées</span>
           <span className="value" style={{ color: "var(--event)" }}>{counts?.detected ?? "—"}</span></div>
         <div className="stat"><span className="label">Manquées</span>
           <span className="value">{counts?.missed ?? "—"}</span></div>
         <div className="stat"><span className="label">Fausses alarmes</span>
-          <span className="value muted">{counts?.false_alarms ?? "—"}</span></div>
+          <span className="value muted">{counts?.fa ?? "—"}</span></div>
       </section>
 
       <div className="mission-body">
         <div className="chart-stack">
-          {series.data && events.data ? (
-            <SeriesChart series={series.data} events={shown} selected={selected}
-                         onSelect={setSelected} />
-          ) : series.isError ? (
-            <ErrorNote>Série indisponible pour {year}.</ErrorNote>
+          <div className="label" style={{ display: "flex", justifyContent: "space-between" }}>
+            <span>{rangeLabel(range)}</span>
+            {year === null && (
+              <button className="link-button" onClick={() => commit(yearRange(new Date(range[0]).getUTCFullYear()))}>
+                Revenir à l’année
+              </button>
+            )}
+          </div>
+          {series && events ? (
+            <SeriesChart range={range} series={series} events={shown} selected={selected}
+                         onSelect={setSelected} animate={`${committed[0]}-${committed[1]}`} />
+          ) : error ? (
+            <ErrorNote>Série indisponible pour cette période.</ErrorNote>
           ) : (
             <div className="skeleton" style={{ aspectRatio: `${W} / ${H}` }} />
           )}
-          <div className="months">{MONTHS_SHORT.map((m) => <span key={m}>{m}</span>)}</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
             <span className="label">Activité solaire · F10.7</span>
-            {series.data && <SolarBand series={series.data} />}
+            {series && <SolarBand range={range} series={series} />}
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}>
             <span className="label">
-              Mission complète · {sat.years[0]} → {sat.years[sat.years.length - 1]}
+              Mission complète · {sat.years[0]} → {sat.years[sat.years.length - 1]} · glisser la
+              fenêtre pour se déplacer, tirer ses bords pour zoomer
             </span>
-            <OverviewStrip sat={sat} year={year} onYear={setYear} />
+            <OverviewStrip sat={sat} range={range} onDraft={setDraft} onCommit={commit} />
           </div>
-          {year === 2014 && (
+          {range[0] < opsStart && (
             <p className="faint" style={{ fontSize: 12, margin: 0 }}>
               Avant août 2014 : acquisition de l’orbite de référence, hors évaluation.
             </p>

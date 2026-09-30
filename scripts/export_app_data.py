@@ -179,7 +179,9 @@ def build_metrics(sat: str) -> dict:
     """Headline numbers for the Method page, all read from the pipeline outputs."""
     step3 = json.loads((REPO_ROOT / "reports" / "step3" / "metrics.json").read_text())
     series = pd.read_parquet(processed_dir() / f"series_{sat}.parquet")
-    ops = json.loads((processed_dir() / f"model_{sat}.json").read_text())["operational_start"]
+    model = json.loads((processed_dir() / f"model_{sat}.json").read_text())
+    ops = model["operational_start"]
+    template = model["template"]["values"]
     s = series[series["valid"] & (series["t"] >= ops)]
     s = s[np.diff(s.index.to_numpy(), prepend=s.index[0] - 1) == 1]  # consecutive orbits
     return {
@@ -188,6 +190,15 @@ def build_metrics(sat: str) -> dict:
         "test": step3["test"],
         "comparison": step3["comparison"],
         "noise_m": {"raw": _noise(s["a"].to_numpy()), "template": _noise(s["a_c"].to_numpy())},
+        "model": {
+            "operational_start": ops, "split": model["split"],
+            "repeat_revolutions": model["template"]["repeat"],
+            "template_ptp_a_m": float(np.ptp(template["a"])),
+            "template_ptp_i_mdeg": float(np.ptp(template["i"]) * np.rad2deg(1.0) * 1e3),
+            "drag_beta": model["drag"]["beta"],
+            "sigma": model["sigma"],
+        },
+        "revolutions": int(len(series[series["valid"]])),
         "source": "reports/step3/metrics.json, processed series",
     }
 

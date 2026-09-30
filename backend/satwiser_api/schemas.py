@@ -116,4 +116,6 @@ class Metrics(BaseModel):
     test: dict
     comparison: list[dict]
     noise_m: dict[str, float]
+    model: dict = {}
+    revolutions: int | None = None
     source: str

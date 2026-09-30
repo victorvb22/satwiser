@@ -46,6 +46,10 @@ button { font: inherit; color: inherit; }
 .nav {
   height: 80px; display: flex; align-items: center; justify-content: space-between;
   border-bottom: 1px solid var(--hairline); gap: 24px;
+  position: sticky; top: 0; z-index: 20;
+  margin: 0 calc(-1 * var(--gutter)); padding: 0 var(--gutter);
+  background: rgba(6, 8, 14, 0.82);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
 }
 .brand { display: flex; align-items: center; gap: 12px; color: var(--text); }
 .brand span { font-size: 20px; font-weight: 500; letter-spacing: -0.4px; }
@@ -136,11 +140,28 @@ input[type="range"] { width: 100%; height: 24px; margin: 0; accent-color: var(--
 .marker.unscored span { border-radius: 50%; background: var(--faint); width: 5px; height: 5px; }
 .marker[aria-pressed="true"] span { box-shadow: 0 0 0 7px rgba(156, 194, 255, 0.28); }
 .overview { position: relative; cursor: pointer; touch-action: none; }
+.overview { user-select: none; }
 .overview-frame {
   position: absolute; top: 0; bottom: 0; border: 1px solid var(--data);
-  background: rgba(156, 194, 255, 0.08); border-radius: 4px; transition: left 240ms ease;
-  cursor: grab;
+  background: rgba(156, 194, 255, 0.08); border-radius: 4px; min-width: 4px;
+  pointer-events: none;
 }
+.overview-frame .handle {
+  position: absolute; top: 50%; width: 4px; height: 16px; margin-top: -8px;
+  border-radius: 2px; background: var(--data);
+}
+.overview-frame .handle.left { left: -2.5px; }
+.overview-frame .handle.right { right: -2.5px; }
+.overview:hover .overview-frame, .overview:focus-visible .overview-frame {
+  background: rgba(156, 194, 255, 0.14);
+}
+.ticks { position: relative; height: 14px; font-family: var(--mono); font-size: 11px; color: var(--faint); }
+.ticks span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; }
+.ticks span:first-child { transform: none; }
+.link-button {
+  background: none; border: 0; padding: 0; color: var(--data); cursor: pointer; font-size: 12px;
+}
+.link-button:hover { text-decoration: underline; }
 .legend { display: flex; flex-direction: column; gap: 12px; font-size: 13px; color: var(--muted); }
 .legend div { display: flex; align-items: center; gap: 12px; }
 .fade-in { animation: fade 320ms ease both; }
@@ -182,6 +203,7 @@ input[type="range"] { width: 100%; height: 24px; margin: 0; accent-color: var(--
 .steps li { counter-increment: step; display: grid; grid-template-columns: 40px 1fr; gap: 8px; }
 .steps li::before { content: counter(step, decimal-leading-zero); font-family: var(--mono); color: var(--data); font-size: 13px; padding-top: 3px; }
 .figures { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 8px 0; }
+.figures .label { min-height: 2.6em; }
 .figures .card { gap: 6px; padding: 18px; }
 .figures .value { font-family: var(--mono); font-size: 26px; color: var(--event); }
 table.metrics { border-collapse: collapse; width: 100%; font-size: 13px; }
@@ -212,4 +234,32 @@ table.metrics td:first-child { font-family: var(--sans); }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+/* Method (full width, justified) ---------------------------------------------------- */
+.method { display: flex; flex-direction: column; gap: 8px; }
+.method-section {
+  display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 48px;
+  padding: 32px 0; border-top: 1px solid var(--hairline);
+}
+.method-section h2 {
+  margin: 0; font-weight: 300; font-size: 26px; letter-spacing: -0.6px; line-height: 1.2;
+  position: sticky; top: 104px; align-self: start;
+}
+.method-text {
+  display: flex; flex-direction: column; gap: 16px; font-size: 15.5px; line-height: 1.7;
+  color: #c9d0de; text-align: justify; hyphens: auto; -webkit-hyphens: auto;
+}
+.method-text p, .method-text ul { margin: 0; }
+.method-text li { margin-bottom: 8px; }
+.method-text a { color: var(--data); }
+.method-text strong { color: var(--text); font-weight: 500; }
+.method-text .formula {
+  text-align: center; font-family: var(--mono); font-size: 15px; color: var(--text);
+  padding: 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface);
+}
+.method .figures { margin-bottom: 16px; }
+@media (max-width: 1000px) {
+  .method-section { grid-template-columns: 1fr; gap: 16px; }
+  .method-section h2 { position: static; }
 }

@@ -100,6 +100,16 @@ export interface Metrics {
   test: Record<string, number>;
   comparison: Record<string, number | string>[];
   noise_m: { raw: number; template: number };
+  model: {
+    operational_start: string;
+    split: string;
+    repeat_revolutions: number;
+    template_ptp_a_m: number;
+    template_ptp_i_mdeg: number;
+    drag_beta: number[];
+    sigma: { a: number; i: number };
+  };
+  revolutions: number;
   source: string;
 }
 

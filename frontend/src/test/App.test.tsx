@@ -104,7 +104,8 @@ describe("Mission screen", () => {
     renderAt("/?annee=2025");
     expect(await screen.findByRole("heading", { name: /Journal orbital/ })).toBeInTheDocument();
     const stats = screen.getByRole("region", { name: "Bilan 2025" });
-    expect(within(stats).getByText("3")).toBeInTheDocument();
+    // Counters come from the events of the displayed range (1 detected + 1 missed).
+    expect(await within(stats).findByText("2")).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: /Manœuvre détectée, 1 mars 2025/ }))
       .toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Manœuvre manquée/ })).toBeInTheDocument();
