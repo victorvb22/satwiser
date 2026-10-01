@@ -559,16 +559,39 @@ function EventCard({ id, satellite }: { id: string | null; satellite: string }) 
 
 // ---------------------------------------------------------------------------- page
 
+/**
+ * Last Mission view of this tab (window and selected event, as URL parameters). Opening
+ * the page without parameters (menu link, coming back from the lab) restores it.
+ */
+let lastMissionView = "";
+
 function MissionView({ sat }: { sat: Satellite }) {
   const [params, setParams] = useSearchParams();
+  const view = useMemo(() => (params.toString() ? params : new URLSearchParams(lastMissionView)),
+                       [params]);
+  useEffect(() => {
+    if (params.toString()) lastMissionView = params.toString();
+    else if (lastMissionView) setParams(new URLSearchParams(lastMissionView), { replace: true });
+  }, [params, setParams]);
   const client = useQueryClient();
   const defaultYear = sat.years[sat.years.length - 2] ?? sat.years[0];
   const committed = useMemo<Range>(() => {
-    const d = Date.parse(`${params.get("debut")}T00:00:00Z`);
-    const f = Date.parse(`${params.get("fin")}T00:00:00Z`);
+    const d = Date.parse(`${view.get("debut")}T00:00:00Z`);
+    const f = Date.parse(`${view.get("fin")}T00:00:00Z`);
     if (Number.isFinite(d) && Number.isFinite(f) && f - d >= MIN_SPAN) return [d, f];
-    return yearRange(Number(params.get("annee")) || defaultYear);
-  }, [params, defaultYear]);
+    return yearRange(Number(view.get("annee")) || defaultYear);
+  }, [view, defaultYear]);
+  // The selected event lives in the URL too, so the back button and the menu link
+  // return to it.
+  const selected = view.get("evenement");
+  const writeView = (r: Range, event: string | null) => {
+    const y = exactYear(r);
+    const next: Record<string, string> = y !== null ? { annee: String(y) }
+      : { debut: isoDay(r[0]), fin: isoDay(r[1]) };
+    if (event) next.evenement = event;
+    setParams(next, { replace: true });
+  };
+  const setSelected = (id: string | null) => writeView(committed, id);
   const [draft, setDraft] = useState<Range | null>(null);
   // Bumped by discrete changes (year buttons) to replay the charts' entrance; gestures
   // and the overview strip move the window without it.
@@ -577,22 +600,36 @@ function MissionView({ sat }: { sat: Satellite }) {
   const range = draft ?? committed;
   const commit = (r: Range, replay = true) => {
     if (replay) setChartKey((k) => k + 1);
-    const y = exactYear(r);
-    setParams(y !== null ? { annee: String(y) } : { debut: isoDay(r[0]), fin: isoDay(r[1]) },
-              { replace: true });
+    writeView(r, selected);
   };
   const { series, events, error, years } = useRangeData(sat, range);
-  const [selected, setSelected] = useState<string | null>(null);
   const shown = useMemo(() => events ?? [], [events]);
 
   useEffect(() => {
-    if (draft) return;
-    if (!shown.length) return setSelected(null);
+    if (draft || !events) return; // wait for the events, or a restored choice is lost
+    if (!shown.length) {
+      if (selected) setSelected(null);
+      return;
+    }
     if (selected && shown.some((e) => e.id === selected)) return;
     const preferred = shown.find((e) => e.id === sat.default_lab_event)
       ?? shown.find((e) => e.kind === "detected") ?? shown[0];
     setSelected(preferred.id);
-  }, [shown, selected, sat.default_lab_event, draft]);
+  }, [events, shown, selected, sat.default_lab_event, draft]);
+
+  // On phones the year strip scrolls: keep the selected (recent) year in view.
+  const pillsRef = useRef<HTMLDivElement>(null);
+  const year = exactYear(committed);
+  useEffect(() => {
+    const strip = pillsRef.current;
+    const active = strip?.querySelector<HTMLElement>('[aria-pressed="true"]');
+    if (!strip || strip.scrollWidth <= strip.clientWidth) return;
+    const box = strip.getBoundingClientRect();
+    const target = active ? active.getBoundingClientRect() : null;
+    const left = target ? strip.scrollLeft + target.left + target.width / 2 - box.left - box.width / 2
+      : strip.scrollWidth;
+    strip.scrollTo?.({ left, behavior: "smooth" });
+  }, [year]);
 
   useEffect(() => {
     const lo = Math.min(...years) - 1;
@@ -614,7 +651,6 @@ function MissionView({ sat }: { sat: Satellite }) {
   }, [events]);
   const meanA = series ? series.a.filter((v): v is number => v !== null) : [];
   const altitude = meanA.length ? meanA.reduce((s, v) => s + v, 0) / meanA.length - R_EARTH : null;
-  const year = exactYear(committed);
   const opsStart = Date.parse(`${sat.operational_start}T00:00:00Z`);
 
   return (
@@ -631,7 +667,7 @@ function MissionView({ sat }: { sat: Satellite }) {
             traînée fait descendre l’orbite, chaque manœuvre la remonte.
           </p>
         </div>
-        <div className="pills" role="group" aria-label="Année affichée">
+        <div className="pills" role="group" aria-label="Année affichée" ref={pillsRef}>
           {sat.years.map((y) => (
             <button key={y} className="pill" aria-pressed={y === year} onClick={() => commit(yearRange(y))}>
               {y}

@@ -20,6 +20,8 @@
 
 * { box-sizing: border-box; }
 html, body, #root { margin: 0; min-height: 100%; }
+/* No grey or blue flash behind tapped links and buttons on phones. */
+html { -webkit-tap-highlight-color: transparent; }
 body {
   background: var(--bg);
   color: var(--text);
@@ -316,7 +318,6 @@ table.metrics td:first-child { font-family: var(--sans); }
 @keyframes rise-in { from { opacity: 0; transform: translateY(14px); } }
 @keyframes wipe { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
 @keyframes cell-in { from { opacity: 0; transform: scale(0.55); } }
-@keyframes pop { from { opacity: 0.25; transform: translateY(5px); } }
 
 .page-header .intro > *, .page-header > :not(.intro) { animation: rise-in 700ms var(--ease-out) backwards; }
 .page-header .intro > :nth-child(2) { animation-delay: 70ms; }
@@ -347,7 +348,6 @@ table.metrics td:first-child { font-family: var(--sans); }
 .reveal.in table.metrics tbody tr:nth-child(3) { animation-delay: 220ms; }
 .reveal.in table.metrics tbody tr:nth-child(4) { animation-delay: 330ms; }
 
-.pop { animation: pop 420ms var(--ease-out); }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }

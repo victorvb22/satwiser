@@ -12,7 +12,7 @@ import {
   type Robustness,
 } from "../api/client";
 import { ErrorNote, Loading } from "../components/Layout";
-import { Reveal } from "../components/Motion";
+import { Reveal, useCountUp } from "../components/Motion";
 import type { LabConfig, LabParams, LabResult } from "../lab/runLab";
 import { useLab } from "../lab/useLab";
 import { CLASS_LABEL, dateFr, dv, KIND_LABEL, length, num, pct } from "../lib/format";
@@ -214,6 +214,8 @@ function LabView({ eventId, grid }: { eventId: string; grid: Robustness }) {
   const signedDv = (mm: number | null) =>
     mm === null ? "—" : mm === 0 ? "aucune" : `${mm < 0 ? "−" : ""}${dv(Math.abs(mm))}`;
   const minDv = minDetectable(grid, sigma, points, rho);
+  // Eased rather than replaced, so that it glides while a slider moves.
+  const minDvShown = useCountUp(minDv, 450);
   const choose = (key: string) => {
     const p = grid.presets[key];
     setPreset(key);
@@ -236,8 +238,7 @@ function LabView({ eventId, grid }: { eventId: string; grid: Robustness }) {
         </div>
         <div className="keyfig" aria-live="polite">
           <span className="label">Plus petite manœuvre détectée à 90 %</span>
-          {/* Keyed on the value so that each change eases in. */}
-          <span className="value pop" key={String(minDv)}>{minDv === null ? "> 1 m/s" : dv(minDv * 10)}</span>
+          <span className="value">{minDvShown === null ? "> 1 m/s" : dv(minDvShown * 10)}</span>
         </div>
       </header>
 
@@ -264,7 +265,7 @@ function LabView({ eventId, grid }: { eventId: string; grid: Robustness }) {
           <div className="card" style={{ padding: 20, gap: 12 }}>
             <div className="verdict" aria-live="polite">
               <span className="dot" style={{ background: verdictColour, boxShadow: `0 0 12px ${verdictColour}` }} />
-              <span className="text pop" key={verdictText}>{verdictText}</span>
+              <span className="text">{verdictText}</span>
             </div>
             <div className="card-row" style={{ fontSize: 13 }}><span>Score z près de la manœuvre</span>
               <span>{result?.zMaxNearEvent == null ? "—" : num(Math.abs(result.zMaxNearEvent), 1)}</span></div>

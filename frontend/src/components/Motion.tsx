@@ -54,7 +54,8 @@ export function useCountUp(value: number | null, ms = 700): number | null {
     const v0 = from.current;
     let frame = 0;
     const step = (now: number) => {
-      const t = Math.min((now - start) / ms, 1);
+      // The frame timestamp can precede `start`: clamp, or the easing overshoots backwards.
+      const t = Math.min(Math.max((now - start) / ms, 0), 1);
       const v = v0 + (value - v0) * (1 - (1 - t) ** 3);
       from.current = v;
       setShown(v);
