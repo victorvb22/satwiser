@@ -14,6 +14,14 @@ page.on("pageerror", (e) => errors.push(String(e)));
 for (const path of ["/", "/labo", "/methode"]) {
   await page.goto(base + path, { waitUntil: "networkidle2" });
   await new Promise((r) => setTimeout(r, 1500));
+  // Scroll through the page so that blocks revealed on scroll are shown in the capture.
+  const total = await page.evaluate(() => document.documentElement.scrollHeight);
+  for (let y = 0; y <= total; y += 400) {
+    await page.evaluate((v) => window.scrollTo(0, v), y);
+    await new Promise((r) => setTimeout(r, 120));
+  }
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await new Promise((r) => setTimeout(r, 1000));
   const overflow = await page.evaluate(() => {
     const vw = document.documentElement.clientWidth;
     const wide = [...document.querySelectorAll("main *, nav *, footer *")]

@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 import { useMetrics, useRobustness, useSatellites, type Metrics, type Robustness } from "../api/client";
 import { FCD_URL, REPO_URL } from "../components/Layout";
+import { Reveal } from "../components/Motion";
 import { dateFr, dv, length, num, pct } from "../lib/format";
 import { minDetectable } from "../lib/grid";
 
@@ -22,10 +23,10 @@ function detectorName(raw: string): string {
 
 function Section({ id, title, children }: { id: string; title: string; children: ReactNode }) {
   return (
-    <section className="method-section" aria-labelledby={id}>
+    <Reveal as="section" className="method-section" aria-labelledby={id}>
       <h2 id={id}>{title}</h2>
       <div className="method-text">{children}</div>
-    </section>
+    </Reveal>
   );
 }
 
@@ -50,25 +51,25 @@ function Figures({ m, g }: { m: Metrics; g: Robustness }) {
   const test = periods(m.model).test.replace("–", " → ");
   return (
     <div className="figures">
-      <div className="card">
+      <Reveal variant="unfold" className="card">
         <span className="label">Rappel · précision (test {test})</span>
         <span className="value">{pct(m.test.recall)} · {pct(m.test.precision)}</span>
         <span className="faint" style={{ fontSize: 12 }}>
           {m.test.tp} manœuvres détectées sur {m.test.observable}, {m.test.fp} fausses alarmes
         </span>
-      </div>
-      <div className="card">
+      </Reveal>
+      <Reveal variant="unfold" className="card" delay={120}>
         <span className="label">Erreur médiane sur le Δv estimé</span>
         <span className="value">{dv(m.test.dv_abs_err_median_mm_s)}</span>
         <span className="faint" style={{ fontSize: 12 }}>
           délai médian de détection {num(m.test.delay_median_h, 1)} h
         </span>
-      </div>
-      <div className="card">
+      </Reveal>
+      <Reveal variant="unfold" className="card" delay={240}>
         <span className="label">Plus petite manœuvre détectée à 90 %</span>
         <span className="value">{presetFloor(g, "pod")}</span>
         <span className="faint" style={{ fontSize: 12 }}>avec les orbites précises Copernicus</span>
-      </div>
+      </Reveal>
     </div>
   );
 }
@@ -281,7 +282,7 @@ export default function Method() {
             {model ? ` (avant le ${dateFr(model.operational_start)})` : ""} est exclue.
           </p>
           {m && (
-            <div className="table-scroll">
+            <Reveal variant="fade" className="table-scroll">
             <table className="metrics">
               <thead>
                 <tr><th>Détecteur (période de test)</th><th>Rappel</th><th>Précision</th><th>F1</th>
@@ -300,7 +301,7 @@ export default function Method() {
                 ))}
               </tbody>
             </table>
-            </div>
+            </Reveal>
           )}
           <p>
             * Délai indicatif : la normalisation des détecteurs de référence utilise une fenêtre

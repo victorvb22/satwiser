@@ -40,7 +40,6 @@ button { font: inherit; color: inherit; }
 }
 
 /* Layout ------------------------------------------------------------------------ */
-.stars { position: fixed; inset: 0; pointer-events: none; z-index: 0; }
 .shell {
   position: relative; z-index: 1; max-width: 1440px; margin: 0 auto;
   padding: 0 var(--gutter); min-height: 100vh; display: flex; flex-direction: column;
@@ -50,13 +49,12 @@ button { font: inherit; color: inherit; }
   border-bottom: 1px solid var(--hairline); gap: 24px;
   position: sticky; top: 0; z-index: 20;
   margin: 0 calc(-1 * var(--gutter)); padding: 0 var(--gutter);
-  background: rgba(6, 8, 14, 0.82);
-  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  background: var(--bg);
 }
 .brand { display: flex; align-items: center; gap: 12px; color: var(--text); }
 .brand span { font-size: 20px; font-weight: 500; letter-spacing: -0.4px; }
 .nav-links { display: flex; gap: 40px; font-size: 14px; }
-.nav-links a { padding: 12px 0; border-bottom: 1px solid transparent; }
+.nav-links a { padding: 12px 0; border-bottom: 1px solid transparent; transition: color 200ms, border-color 200ms; }
 .nav-links a.active { color: var(--text); border-bottom-color: var(--data); }
 .badge {
   font-family: var(--mono); font-size: 11px; letter-spacing: 1.2px; color: var(--muted);
@@ -166,8 +164,8 @@ input[type="range"] { width: 100%; height: 24px; margin: 0; accent-color: var(--
 .link-button:hover { text-decoration: underline; }
 .legend { display: flex; flex-direction: column; gap: 12px; font-size: 13px; color: var(--muted); }
 .legend div { display: flex; align-items: center; gap: 12px; }
-.fade-in { animation: fade 320ms ease both; }
-@keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.fade-in { animation: fade 420ms cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+@keyframes fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
 /* Lab ------------------------------------------------------------------------ */
 .lab-body { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 48px; margin-top: 36px; }
@@ -180,12 +178,13 @@ input[type="range"] { width: 100%; height: 24px; margin: 0; accent-color: var(--
 .keyfig { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
 .keyfig .value { font-weight: 200; font-size: 52px; line-height: 1; letter-spacing: -1.5px; color: var(--event); }
 .verdict { display: flex; align-items: center; gap: 10px; }
-.verdict .dot { width: 10px; height: 10px; border-radius: 50%; }
+.verdict .dot { width: 10px; height: 10px; border-radius: 50%; transition: background 300ms, box-shadow 300ms; }
 .verdict .text { font-weight: 300; font-size: 22px; letter-spacing: -0.5px; }
 .heatmap { display: grid; gap: 3px; }
 .heatmap .cell {
   height: 26px; border-radius: 4px; display: flex; align-items: center; justify-content: center;
-  font-family: var(--mono); font-size: 10px; transition: background 200ms;
+  font-family: var(--mono); font-size: 10px;
+  transition: background 260ms, color 260ms, box-shadow 260ms;
 }
 .heatmap .axis { font-family: var(--mono); font-size: 10px; color: var(--faint); display: flex; align-items: center; justify-content: flex-end; padding-right: 6px; }
 .heatmap .col-label { font-family: var(--mono); font-size: 10px; color: var(--faint); text-align: center; }
@@ -255,14 +254,12 @@ table.metrics td:first-child { font-family: var(--sans); }
   .heatmap .axis { padding-right: 4px; white-space: nowrap; }
   .title { font-size: 40px; letter-spacing: -1.4px; }
   .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .stat { align-items: center; text-align: center; }
   .page-header .pills { flex-wrap: nowrap; overflow-x: auto; width: 100%; padding-bottom: 4px; }
   .page-header .pill { flex: 0 0 auto; }
   .figures { grid-template-columns: 1fr; }
   .keyfig { align-items: flex-start; }
   .keyfig .value { font-size: 40px; }
-}
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { animation: none !important; transition: none !important; }
 }
 
 /* Method (full width, justified) ---------------------------------------------------- */
@@ -294,8 +291,7 @@ table.metrics td:first-child { font-family: var(--sans); }
   .method-section h2 { position: static; }
 }
 @media (max-width: 720px) {
-  /* Method: ragged right reads better than justified text in a narrow column. */
-  .method-text { text-align: left; font-size: 15px; }
+  .method-text { font-size: 15px; }
   .method-text .formula { font-size: 12.5px; padding: 12px 8px; }
   .method-section { padding: 24px 0; }
   .method-section h2 { font-size: 22px; }
@@ -303,4 +299,46 @@ table.metrics td:first-child { font-family: var(--sans); }
   .overview-frame .handle { width: 6px; height: 22px; margin-top: -11px; border-radius: 3px; }
   .overview-frame .handle.left { left: -3.5px; }
   .overview-frame .handle.right { right: -3.5px; }
+}
+
+/* Motion ---------------------------------------------------------------------------- */
+/* Entrances play once per page visit (or when a block scrolls into view); state changes
+   cross-fade or ease. All of it is switched off under prefers-reduced-motion. */
+:root { --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1); }
+@keyframes rise-in { from { opacity: 0; transform: translateY(14px); } }
+@keyframes wipe { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+@keyframes cell-in { from { opacity: 0; transform: scale(0.55); } }
+@keyframes pop { from { opacity: 0.25; transform: translateY(5px); } }
+
+.page-header .intro > *, .page-header > :not(.intro) { animation: rise-in 700ms var(--ease-out) backwards; }
+.page-header .intro > :nth-child(2) { animation-delay: 70ms; }
+.page-header .intro > :nth-child(3) { animation-delay: 140ms; }
+.page-header > :not(.intro) { animation-delay: 200ms; }
+
+.reveal { transition: opacity 700ms var(--ease-out), transform 700ms var(--ease-out),
+                      clip-path 900ms var(--ease-out); }
+.reveal.rise:not(.in) { opacity: 0; transform: translateY(18px); }
+.reveal.fade:not(.in) { opacity: 0; }
+.reveal.unfold:not(.in) { opacity: 0; clip-path: inset(0 0 100% 0); }
+/* Negative insets: once open, glows and focus rings are not clipped. */
+.reveal.unfold.in { clip-path: inset(-24px); }
+
+/* Charts draw from left to right; the fill mode drops the clip once done. */
+.wipe-in { animation: wipe 1100ms cubic-bezier(0.45, 0, 0.2, 1) backwards; }
+
+/* Heatmap cells cascade in when the map comes into view. */
+.reveal:not(.in) .heatmap .cell { opacity: 0; }
+.reveal.in .heatmap .cell { animation: cell-in 520ms var(--ease-out) backwards; animation-delay: var(--d, 0ms); }
+
+/* Table rows develop one after another. */
+.reveal.in table.metrics tbody tr { animation: rise-in 600ms var(--ease-out) backwards; }
+.reveal.in table.metrics tbody tr:nth-child(2) { animation-delay: 110ms; }
+.reveal.in table.metrics tbody tr:nth-child(3) { animation-delay: 220ms; }
+.reveal.in table.metrics tbody tr:nth-child(4) { animation-delay: 330ms; }
+
+.pop { animation: pop 420ms var(--ease-out); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .reveal { opacity: 1 !important; transform: none !important; clip-path: none !important; }
 }

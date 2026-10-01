@@ -13,6 +13,7 @@ import {
   type Satellite,
 } from "../api/client";
 import { ErrorNote, Loading } from "../components/Layout";
+import { CountUp, Reveal } from "../components/Motion";
 import { CLASS_LABEL, dateFr, dv, ESA_TYPE_LABEL, KIND_LABEL, MONTHS_SHORT, num, signed,
          timeFr } from "../lib/format";
 import { lttb } from "../lib/lttb";
@@ -156,9 +157,14 @@ interface ChartProps {
   selected: string | null;
   onSelect: (id: string) => void;
   animate: string;
+  /** wipe: draw from left to right (arrival, year change); fade: after a drag. */
+  entrance: Entrance;
 }
 
-function SeriesChart({ range, series, events, selected, onSelect, animate }: ChartProps) {
+type Entrance = "wipe" | "fade";
+const ENTRANCE_CLASS: Record<Entrance, string> = { wipe: "wipe-in", fade: "fade-in" };
+
+function SeriesChart({ range, series, events, selected, onSelect, animate, entrance }: ChartProps) {
   const x = scaleLinear().domain(range).range([0, W]);
   // Sorting and downsampling depend on the data only, not on the selected marker.
   const { rel, span, reduced } = useMemo(() => {
@@ -186,7 +192,7 @@ function SeriesChart({ range, series, events, selected, onSelect, animate }: Cha
 
   return (
     <div className="chart-stack" style={{ gap: 14 }}>
-      <div className="chart-frame fade-in" key={animate}>
+      <div className={`chart-frame ${ENTRANCE_CLASS[entrance]}`} key={animate}>
         <svg viewBox={`0 0 ${W} ${H}`} role="img"
              aria-label={`Demi-grand axe moyen par révolution, ${rangeLabel(range)}`}>
           <defs><clipPath id="plot-area"><rect x="0" y="0" width={W} height={H} /></clipPath></defs>
@@ -434,8 +440,10 @@ function MissionView({ sat }: { sat: Satellite }) {
     return yearRange(Number(params.get("annee")) || defaultYear);
   }, [params, defaultYear]);
   const [draft, setDraft] = useState<Range | null>(null);
+  const [entrance, setEntrance] = useState<Entrance>("wipe");
   const range = draft ?? committed;
-  const commit = (r: Range) => {
+  const commit = (r: Range, how: Entrance = "wipe") => {
+    setEntrance(how);
     const y = exactYear(r);
     setParams(y !== null ? { annee: String(y) } : { debut: isoDay(r[0]), fin: isoDay(r[1]) },
               { replace: true });
@@ -499,16 +507,16 @@ function MissionView({ sat }: { sat: Satellite }) {
         </div>
       </header>
 
-      <section className="stats" aria-label={`Bilan ${rangeLabel(range)}`}>
+      <Reveal as="section" className="stats" delay={150} aria-label={`Bilan ${rangeLabel(range)}`}>
         <div className="stat"><span className="label">Manœuvres étiquetées ESA</span>
-          <span className="value">{counts?.esa ?? "—"}</span></div>
+          <span className="value"><CountUp value={counts?.esa ?? null} /></span></div>
         <div className="stat"><span className="label">Détectées</span>
-          <span className="value" style={{ color: "var(--event)" }}>{counts?.detected ?? "—"}</span></div>
+          <span className="value" style={{ color: "var(--event)" }}><CountUp value={counts?.detected ?? null} /></span></div>
         <div className="stat"><span className="label">Manquées</span>
-          <span className="value">{counts?.missed ?? "—"}</span></div>
+          <span className="value"><CountUp value={counts?.missed ?? null} /></span></div>
         <div className="stat"><span className="label">Fausses alarmes</span>
-          <span className="value muted">{counts?.fa ?? "—"}</span></div>
-      </section>
+          <span className="value muted"><CountUp value={counts?.fa ?? null} /></span></div>
+      </Reveal>
 
       <div className="mission-body">
         <div className="chart-stack">
@@ -522,7 +530,8 @@ function MissionView({ sat }: { sat: Satellite }) {
           </div>
           {series && events ? (
             <SeriesChart range={range} series={series} events={shown} selected={selected}
-                         onSelect={setSelected} animate={`${committed[0]}-${committed[1]}`} />
+                         onSelect={setSelected} animate={`${committed[0]}-${committed[1]}`}
+                         entrance={entrance} />
           ) : error ? (
             <ErrorNote>Série indisponible pour cette période.</ErrorNote>
           ) : (
@@ -530,15 +539,20 @@ function MissionView({ sat }: { sat: Satellite }) {
           )}
           <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
             <span className="label">Activité solaire · F10.7</span>
-            {series && <SolarBand range={range} series={series} />}
+            {series && (
+              <div key={`${committed[0]}-${committed[1]}`} className={ENTRANCE_CLASS[entrance]}>
+                <SolarBand range={range} series={series} />
+              </div>
+            )}
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}>
+          <Reveal delay={300} style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}>
             <span className="label">
               Mission complète · {sat.years[0]} → {sat.years[sat.years.length - 1]} · glisser la
               fenêtre pour se déplacer, tirer ses bords pour zoomer
             </span>
-            <OverviewStrip sat={sat} range={range} onDraft={setDraft} onCommit={commit} />
-          </div>
+            <OverviewStrip sat={sat} range={range} onDraft={setDraft}
+                           onCommit={(r) => commit(r, "fade")} />
+          </Reveal>
           {range[0] < opsStart && (
             <p className="faint" style={{ fontSize: 12, margin: 0 }}>
               Avant le {dateFr(sat.operational_start)} : acquisition de l’orbite de référence,
@@ -547,8 +561,10 @@ function MissionView({ sat }: { sat: Satellite }) {
           )}
         </div>
         <aside style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-          <EventCard id={selected} satellite={sat.name} />
-          <div className="legend">
+          <Reveal variant="unfold" delay={250}>
+            <EventCard id={selected} satellite={sat.name} />
+          </Reveal>
+          <Reveal className="legend" delay={400}>
             <div><span className="marker detected" style={{ position: "static", margin: 0, width: 9 }}><span /></span>Manœuvre détectée</div>
             <div><span className="marker missed" style={{ position: "static", margin: 0, width: 9 }}><span /></span>Manœuvre manquée</div>
             <div><span className="marker false_alarm" style={{ position: "static", margin: 0, width: 9 }}><span /></span>Fausse alarme</div>
@@ -557,7 +573,7 @@ function MissionView({ sat }: { sat: Satellite }) {
               Test : {sat.summary.by_split.test.detected} détectées sur{" "}
               {sat.summary.by_split.test.esa_manoeuvres} depuis le {dateFr(sat.split)}.
             </p>
-          </div>
+          </Reveal>
         </aside>
       </div>
     </>

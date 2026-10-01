@@ -1,7 +1,5 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { NavLink, Outlet } from "react-router-dom";
-
-import { mulberry32 } from "../lab/pipeline";
 
 export const ATTRIBUTION = "Contains modified Copernicus Sentinel data 2014–2026";
 export const REPO_URL = "https://github.com/victorvb22/satwiser";
@@ -18,53 +16,31 @@ function Logo() {
   );
 }
 
-/** Static, very faint star field (deterministic). */
-function Stars() {
-  const stars = useMemo(() => {
-    const r = mulberry32(3);
-    return Array.from({ length: 110 }, () => ({
-      x: r() * 100, y: r() * 100, s: r() < 0.85 ? 1 : 2, o: 0.12 + r() * 0.45,
-    }));
-  }, []);
-  return (
-    <div className="stars" aria-hidden="true">
-      {stars.map((st, k) => (
-        <span key={k} style={{ position: "absolute", left: `${st.x}%`, top: `${st.y}%`,
-                               width: st.s, height: st.s, borderRadius: "50%",
-                               background: "#CFDBF5", opacity: st.o }} />
-      ))}
-    </div>
-  );
-}
-
 export function Layout() {
   return (
-    <>
-      <Stars />
-      <div className="shell">
-        <nav className="nav" aria-label="Navigation principale">
-          <NavLink to="/" className="brand" aria-label="Satwiser, accueil">
-            <Logo />
-            <span>Satwiser</span>
-          </NavLink>
-          <div className="nav-links">
-            <NavLink to="/" end>Mission</NavLink>
-            <NavLink to="/labo">Labo</NavLink>
-            <NavLink to="/methode">Méthode</NavLink>
-          </div>
-          <span className="badge">DONNÉES COPERNICUS · POD</span>
-        </nav>
-        <main>
-          <Outlet />
-        </main>
-        <footer className="footer">
-          <span>{ATTRIBUTION}</span>
-          <span>
-            <a href={REPO_URL} target="_blank" rel="noreferrer">Code source</a>
-          </span>
-        </footer>
-      </div>
-    </>
+    <div className="shell">
+      <nav className="nav" aria-label="Navigation principale">
+        <NavLink to="/" className="brand" aria-label="Satwiser, accueil">
+          <Logo />
+          <span>Satwiser</span>
+        </NavLink>
+        <div className="nav-links">
+          <NavLink to="/" end>Mission</NavLink>
+          <NavLink to="/labo">Labo</NavLink>
+          <NavLink to="/methode">Méthode</NavLink>
+        </div>
+        <span className="badge">DONNÉES COPERNICUS · POD</span>
+      </nav>
+      <main>
+        <Outlet />
+      </main>
+      <footer className="footer">
+        <span>{ATTRIBUTION}</span>
+        <span>
+          <a href={REPO_URL} target="_blank" rel="noreferrer">Code source</a>
+        </span>
+      </footer>
+    </div>
   );
 }
 

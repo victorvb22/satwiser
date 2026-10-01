@@ -12,6 +12,7 @@ import {
   type Robustness,
 } from "../api/client";
 import { ErrorNote, Loading } from "../components/Layout";
+import { Reveal } from "../components/Motion";
 import type { LabConfig, LabParams, LabResult } from "../lab/runLab";
 import { useLab } from "../lab/useLab";
 import { CLASS_LABEL, dateFr, dv, KIND_LABEL, length, num, pct } from "../lib/format";
@@ -88,7 +89,7 @@ function LabChart({ result }: { result: LabResult }) {
   for (let k = 0; k <= 10; k++) grid += `M${x(k).toFixed(1)} 0V${H}`;
   const evX = x(result.eventDays);
   return (
-    <div className="chart-frame" style={{ borderTop: "1px solid var(--hairline)", borderBottom: "1px solid var(--hairline)" }}>
+    <div className="chart-frame wipe-in" style={{ borderTop: "1px solid var(--hairline)", borderBottom: "1px solid var(--hairline)" }}>
       <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Série dégradée et détections">
         <path d={grid} stroke="var(--grid)" fill="none" />
         <path d={`M${evX} 0V${H}`} stroke="var(--faint)" strokeDasharray="3 5" fill="none" />
@@ -133,7 +134,7 @@ function Heatmap({ grid, sigma, dvMm, points, rho }: { grid: Robustness; sigma: 
       </div>
       <div className="heatmap" role="table" aria-label="Probabilité de détection selon le bruit et le Δv"
            style={{ gridTemplateColumns: `var(--axis-w) repeat(${cols}, minmax(0, 1fr))`, marginTop: 10 }}>
-        {rows.map((di) => (
+        {rows.map((di, rk) => (
           <div key={di} role="row" style={{ display: "contents" }}>
             <span className="axis" role="rowheader">{dv(grid.axes.dv_cm_s[di] * 10)}</span>
             {grid.axes.sigma_m.map((_, si) => {
@@ -143,7 +144,9 @@ function Heatmap({ grid, sigma, dvMm, points, rho }: { grid: Robustness; sigma: 
                 <div key={si} role="cell" className="cell"
                      aria-label={`${dv(grid.axes.dv_cm_s[di] * 10)}, bruit ${length(grid.axes.sigma_m[si])} : ${pct(p)}`}
                      style={{ background: cellColour(p), color: p > 0.55 ? "#06080E" : "#8C95AB",
-                              boxShadow: current ? "inset 0 0 0 2px #F4A259, 0 0 0 1px #F4A259" : undefined }}>
+                              boxShadow: current ? "inset 0 0 0 2px #F4A259, 0 0 0 1px #F4A259" : undefined,
+                              // Cascade from the top-left corner (see .reveal.in .cell).
+                              ["--d" as string]: `${(rk + si) * 24}ms` }}>
                   {p >= 0.05 ? Math.round(p * 100) : ""}
                 </div>
               );
@@ -233,12 +236,13 @@ function LabView({ eventId, grid }: { eventId: string; grid: Robustness }) {
         </div>
         <div className="keyfig" aria-live="polite">
           <span className="label">Plus petite manœuvre détectée à 90 %</span>
-          <span className="value">{minDv === null ? "> 1 m/s" : dv(minDv * 10)}</span>
+          {/* Keyed on the value so that each change eases in. */}
+          <span className="value pop" key={String(minDv)}>{minDv === null ? "> 1 m/s" : dv(minDv * 10)}</span>
         </div>
       </header>
 
       <div className="lab-body">
-        <aside className="controls">
+        <Reveal as="aside" className="controls" delay={120}>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <span className="kicker">QUALITÉ DES DONNÉES</span>
             <div className="pills" role="group" aria-label="Préréglages">
@@ -258,9 +262,9 @@ function LabView({ eventId, grid }: { eventId: string; grid: Robustness }) {
                   display={signedDv(dvSign * dvMm)}
                   lo="0 · 0,2 mm/s" hi="1 m/s" onChange={(v) => setDvV(v)} />
           <div className="card" style={{ padding: 20, gap: 12 }}>
-            <div className="verdict">
+            <div className="verdict" aria-live="polite">
               <span className="dot" style={{ background: verdictColour, boxShadow: `0 0 12px ${verdictColour}` }} />
-              <span className="text" aria-live="polite">{verdictText}</span>
+              <span className="text pop" key={verdictText}>{verdictText}</span>
             </div>
             <div className="card-row" style={{ fontSize: 13 }}><span>Score z près de la manœuvre</span>
               <span>{result?.zMaxNearEvent == null ? "—" : num(Math.abs(result.zMaxNearEvent), 1)}</span></div>
@@ -272,7 +276,7 @@ function LabView({ eventId, grid }: { eventId: string; grid: Robustness }) {
               <span>{signedDv(lab.realDv)}</span></div>
             <button className="button-outline" onClick={() => setSeed((s) => s + 1)}>Nouveau tirage du bruit</button>
           </div>
-        </aside>
+        </Reveal>
 
         {/* On phones the children are reordered (chart first, pinned) by the stylesheet. */}
         <div className="lab-main">
@@ -310,9 +314,9 @@ function LabView({ eventId, grid }: { eventId: string; grid: Robustness }) {
               ))}
             </select>
           </label>
-          <div className="lab-map">
+          <Reveal variant="fade" className="lab-map">
             <Heatmap grid={grid} sigma={sigma} dvMm={dvMm} points={points} rho={rho} />
-          </div>
+          </Reveal>
           <p className="faint lab-note" style={{ fontSize: 12, lineHeight: 1.5, margin: 0 }}>
             La série est recalculée dans le navigateur à partir d’états réels (1 point par minute) :
             dégradation, moyenne par révolution, détecteur. La carte et le chiffre clé viennent
