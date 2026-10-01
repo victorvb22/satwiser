@@ -306,7 +306,14 @@ function LabView({ eventId, grid }: { eventId: string; grid: Robustness }) {
                     style={{ background: "var(--bg)", color: "var(--text)", border: "1px solid var(--border)",
                              borderRadius: 8, padding: "6px 10px", fontFamily: "var(--mono)", fontSize: 12,
                              flex: "0 1 auto", minWidth: 0, maxWidth: "100%" }}>
-              {labEvents.length === 0 && <option value={eventId}>{eventId}</option>}
+              {/* While the list loads, show the current event the way the list will. */}
+              {labEvents.length === 0 && (
+                <option value={eventId}>
+                  {event.data
+                    ? `${event.data.time.slice(0, 10)} · ${KIND_LABEL[event.data.kind]}${event.data.dv_esa_mm_s ? ` · ${dv(event.data.dv_esa_mm_s)}` : ""}`
+                    : "Chargement…"}
+                </option>
+              )}
               {byYear.map(([year, list]) => (
                 <optgroup key={year} label={year}>
                   {list.map((e) => (

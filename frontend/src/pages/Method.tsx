@@ -261,10 +261,12 @@ export default function Method() {
             Deux approches ont été comparées sur {period.test} : une règle sur les sauts estimés
             (saut d’inclinaison supérieur à 5 σ ou demi-grand axe en baisse : changement
             d’orbite ; hausse significative : maintien à poste ; sinon : inexpliquée) et un
-            modèle de gradient boosting entraîné sur {period.cal}. La règle obtient de
-            meilleurs scores sur {period.test}, la période d’entraînement (Soleil calme) contenant trop peu
-            de détections inexpliquées : c’est elle qu’affiche l’application. Ce choix a été
-            fait au vu des scores de test ; ce n’est donc pas une sélection hors échantillon.
+            modèle de gradient boosting entraîné sur {period.cal}. Sur {period.test}, les deux
+            obtiennent des scores très proches (le modèle légèrement devant en F1 macro, la
+            règle en exactitude) : la période d’entraînement (Soleil calme) contient trop peu de
+            détections inexpliquées pour que l’apprentissage fasse nettement mieux.
+            L’application affiche la règle, plus simple et lisible. Ce choix a été fait au vu
+            des scores de test ; ce n’est donc pas une sélection hors échantillon.
           </p>
         </Section>
 
