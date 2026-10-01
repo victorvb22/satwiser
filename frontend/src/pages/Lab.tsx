@@ -1,6 +1,6 @@
 import { scaleLinear } from "d3-scale";
 import { line } from "d3-shape";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import {
@@ -226,6 +226,10 @@ function LabView({ eventId, grid }: { eventId: string; grid: Robustness }) {
   const touch = (fn: (v: number) => void) => (v: number) => { setPreset(null); fn(v); };
   const result = lab.result;
   const [verdictText, verdictColour] = result ? VERDICTS[result.verdict] : ["Calcul…", "var(--faint)"];
+  // The key figure turns grey when the studied manoeuvre is no longer detected; while a
+  // new result is computed it keeps its last state.
+  const lastDetected = useRef(true);
+  if (result) lastDetected.current = result.verdict === "detected";
 
   return (
     <>
@@ -236,7 +240,7 @@ function LabView({ eventId, grid }: { eventId: string; grid: Robustness }) {
             Jusqu’où voit-on <em>une manœuvre ?</em>
           </h1>
         </div>
-        <div className="keyfig" aria-live="polite">
+        <div className={`keyfig${lastDetected.current ? "" : " off"}`} aria-live="polite">
           <span className="label">Plus petite manœuvre détectée à 90 %</span>
           <span className="value">{minDvShown === null ? "> 1 m/s" : dv(minDvShown * 10)}</span>
         </div>
