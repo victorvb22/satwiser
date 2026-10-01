@@ -7,7 +7,7 @@ measuring how detection degrades when the orbit data get worse.**
 [satwiser-api.onrender.com/docs](https://satwiser-api.onrender.com/docs) (free hosting:
 the first request after a quiet period can take up to a minute)
 
-![Mission view: mean semi-major axis of Sentinel-1A in 2024, with detected, missed and unlabelled events](docs/screenshots/mission.png)
+![Demo: the 2024 mission view, zoom and pan on the series, a station-keeping manoeuvre opened in the lab, then position noise raised until the manoeuvre is lost](docs/screenshots/demo.gif)
 
 Operators of low-Earth-orbit satellites raise their orbits regularly to compensate for
 atmospheric drag. A third party watching the sky (a space-surveillance service, a
