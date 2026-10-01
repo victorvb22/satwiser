@@ -93,7 +93,8 @@ export interface LabWindow {
   states: Record<"rx" | "ry" | "rz" | "vx" | "vy" | "vz", number[]>;
   template_a: number[];
   detector: Robustness["detector"];
-  esa_manoeuvres: { start: string; dv_t_mm_s: number; type: string }[];
+  /** ``stop`` (end of the last burn) is absent from windows exported before it was added. */
+  esa_manoeuvres: { start: string; stop?: string; dv_t_mm_s: number; type: string }[];
 }
 
 export interface Metrics {

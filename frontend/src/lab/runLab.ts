@@ -30,12 +30,17 @@ export interface PreparedWindow {
   orbit: Int32Array;
   tOffsetS: Float64Array;
   stepS: number;
-  eventS: number;
+  /** Span of the studied manoeuvre (seconds from the window start): first burn start to
+   * last burn end from the ESA record, or the event time for an unlabelled detection. */
+  eventSpanS: Span;
   template: Float64Array;
   detector: Detector;
-  manoeuvresS: number[];
+  /** Spans of the other ESA manoeuvres of the window. */
+  otherSpansS: Span[];
   realDvMmS: number;
 }
+
+type Span = [number, number];
 
 export interface LabParams extends Degradation {
   /** Along-track Δv of the event's manoeuvre shown in the lab (mm/s); 0 removes it. */
@@ -76,16 +81,18 @@ export function prepare(win: LabWindow, realDvMmS: number | null,
   const states = Object.fromEntries(
     STATE_KEYS.map((k) => [k, Float64Array.from(win.states[k])])) as unknown as States;
   const eventS = toS(win.event_time);
-  const nearest = win.esa_manoeuvres
-    .map((m) => ({ s: toS(m.start), dv: m.dv_t_mm_s }))
-    .sort((p, q) => Math.abs(p.s - eventS) - Math.abs(q.s - eventS))[0];
-  const own = nearest && Math.abs(nearest.s - eventS) < 3 * 3600 ? nearest : null;
+  const spans = win.esa_manoeuvres.map((m) => ({
+    span: [toS(m.start), toS(m.stop ?? m.start)] as Span, dv: m.dv_t_mm_s }));
+  const nearest = [...spans]
+    .sort((p, q) => Math.abs(p.span[0] - eventS) - Math.abs(q.span[0] - eventS))[0];
+  // The event time is the detector's change point; the ESA record gives the truth.
+  const own = nearest && Math.abs(nearest.span[0] - eventS) < 3 * 3600 ? nearest : null;
   return {
     states,
     orbit: Int32Array.from(win.orbit),
     tOffsetS: Float64Array.from(win.t_offset_s),
     stepS: win.step_s,
-    eventS,
+    eventSpanS: own ? own.span : [eventS, eventS],
     template: Float64Array.from(config.template ?? win.template_a),
     detector: config.detector ?? {
       windowRevs: win.detector.window_revs,
@@ -93,7 +100,7 @@ export function prepare(win: LabWindow, realDvMmS: number | null,
       normalisation: win.detector.normalisation,
       floorM: win.detector.floor_m,
     },
-    manoeuvresS: win.esa_manoeuvres.map((m) => toS(m.start)).filter((s) => !own || s !== own.s),
+    otherSpansS: spans.filter((m) => m !== own).map((m) => m.span),
     realDvMmS: realDvMmS ?? own?.dv ?? 0,
   };
 }
@@ -111,8 +118,10 @@ export function runLab(p: PreparedWindow, params: LabParams): LabResult {
                              rho: params.rho };
   const idx = subsample(p.tOffsetS.length, deg.pointsPerDay, 0, p.stepS);
   const stepM = mmToDa(params.dvMmS - p.realDvMmS);
+  // A changed Δv is applied where the real manoeuvre starts, on top of its own jump.
+  const startS = p.eventSpanS[0];
   const withStep = (a: Float64Array) => {
-    for (let k = 0; k < a.length; k++) if (p.tOffsetS[idx[k]] > p.eventS) a[k] += stepM;
+    for (let k = 0; k < a.length; k++) if (p.tOffsetS[idx[k]] > startS) a[k] += stepM;
     return a;
   };
   const noisy = withStep(meanANosp(degrade(p.states, idx, deg, normals(idx.length, params.seed))));
@@ -135,24 +144,29 @@ export function runLab(p: PreparedWindow, params: LabParams): LabResult {
     tCount[b] += 1;
   }
   const tDays = Array.from(tSum, (s, b) => (tCount[b] ? s / tCount[b] / 86400 : NaN));
-  const binOfTime = (s: number) => {
-    let best = 0;
-    for (let b = 0; b < tDays.length; b++) {
-      if (Math.abs(tDays[b] * 86400 - s) < Math.abs(tDays[best] * 86400 - s)) best = b;
+  // Bin of the revolution flown at time s, counted from the first sampled orbit, and a
+  // detection matches a manoeuvre within one bin of its span: the step 4 replay rule.
+  const binAt = (s: number) => {
+    let lo = 0, hi = p.tOffsetS.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (p.tOffsetS[mid] < s) lo = mid + 1; else hi = mid;
     }
-    return best;
+    return Math.floor((p.orbit[lo] - oMin) / revsPerBin);
   };
-  const eventBin = binOfTime(p.eventS);
-  const otherBins = p.manoeuvresS.map(binOfTime);
+  const toBins = ([s0, s1]: Span): Span => [binAt(s0), binAt(s1)];
+  const near = (bin: number, [k0, k1]: Span) => k0 - 1 <= bin && bin <= k1 + 1;
+  const eventBins = toBins(p.eventSpanS);
+  const otherBins = p.otherSpansS.map(toBins);
   const detections = windowDetect(z, p.detector.threshold, window).map((bin) => ({
     bin,
     tDays: tDays[bin],
-    nearEvent: Math.abs(bin - eventBin) <= 1,
-    nearOther: otherBins.some((o) => Math.abs(o - bin) <= 1),
+    nearEvent: near(bin, eventBins),
+    nearOther: otherBins.some((o) => near(bin, o)),
   }));
 
   let zMax: number | null = null;
-  for (let b = Math.max(0, eventBin - 1); b <= Math.min(z.length - 1, eventBin + 1); b++) {
+  for (let b = Math.max(0, eventBins[0] - 1); b <= Math.min(z.length - 1, eventBins[1] + 1); b++) {
     if (!Number.isNaN(z[b]) && (zMax === null || Math.abs(z[b]) > Math.abs(zMax))) zMax = z[b];
   }
   const allNaN = Array.from(z).every(Number.isNaN);
@@ -182,7 +196,7 @@ export function runLab(p: PreparedWindow, params: LabParams): LabResult {
     clean: toNullable(cleanMeans),
     z: toNullable(z),
     detections,
-    eventDays: p.eventS / 86400,
+    eventDays: startS / 86400,
     verdict,
     zMaxNearEvent: zMax,
     noisePerBinM: noise,

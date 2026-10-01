@@ -136,9 +136,12 @@ def _lab_window(args):
                    ("rx", "ry", "rz", "vx", "vy", "vz")},
         "template_a": template,
         "detector": detector,
-        "esa_manoeuvres": [{"start": s.isoformat(), "dv_t_mm_s": float(d * 1e3), "type": t}
-                           for s, d, t in zip(inside["start"], inside["dv_t"], inside["type"],
-                                              strict=True)],
+        # Start and end (first burn start, last burn end): the lab scores a detection
+        # against this span, like the step 4 replay.
+        "esa_manoeuvres": [{"start": s.isoformat(), "stop": e.isoformat(),
+                            "dv_t_mm_s": float(d * 1e3), "type": t}
+                           for s, e, d, t in zip(inside["start"], inside["stop"], inside["dv_t"],
+                                                 inside["type"], strict=True)],
     }
     with gzip.open(out, "wt", encoding="utf-8") as fh:
         json.dump(payload, fh, separators=(",", ":"))
