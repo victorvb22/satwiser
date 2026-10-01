@@ -265,7 +265,9 @@ table.metrics td:first-child { font-family: var(--sans); }
   .title { font-size: 40px; letter-spacing: -1.4px; }
   .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .stat { align-items: center; text-align: center; }
-  .page-header .pills { flex-wrap: nowrap; overflow-x: auto; width: 100%; padding-bottom: 4px; }
+  /* Year strip: scrolls sideways (finger or wheel), without a visible scroll bar. */
+  .page-header .pills { flex-wrap: nowrap; overflow-x: auto; width: 100%; scrollbar-width: none; }
+  .page-header .pills::-webkit-scrollbar { display: none; }
   .page-header .pill { flex: 0 0 auto; }
   .figures { grid-template-columns: 1fr; }
   .keyfig { align-items: flex-start; }
