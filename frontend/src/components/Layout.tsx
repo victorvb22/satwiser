@@ -57,7 +57,7 @@ export function Loading({ what }: { what: string }) {
       <span>Chargement {what}…</span>
       {slow && (
         <span className="faint">
-          Le serveur gratuit se réveille après une période d’inactivité (jusqu’à une minute).
+          Le serveur se réveille après une période d’inactivité (peut prendre jusqu’à une minute).
         </span>
       )}
     </div>

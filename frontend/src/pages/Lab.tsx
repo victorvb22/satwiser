@@ -89,7 +89,7 @@ function LabChart({ result }: { result: LabResult }) {
   for (let k = 0; k <= 10; k++) grid += `M${x(k).toFixed(1)} 0V${H}`;
   const evX = x(result.eventDays);
   return (
-    <div className="chart-frame wipe-in" style={{ borderTop: "1px solid var(--hairline)", borderBottom: "1px solid var(--hairline)" }}>
+    <div className="chart-frame unfold-in" style={{ borderTop: "1px solid var(--hairline)", borderBottom: "1px solid var(--hairline)" }}>
       <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Série dégradée et détections">
         <path d={grid} stroke="var(--grid)" fill="none" />
         <path d={`M${evX} 0V${H}`} stroke="var(--faint)" strokeDasharray="3 5" fill="none" />

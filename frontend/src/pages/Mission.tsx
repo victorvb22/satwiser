@@ -56,6 +56,27 @@ function quantile(sorted: number[], q: number): number {
   return sorted[Math.min(sorted.length - 1, Math.max(0, Math.round(q * (sorted.length - 1))))];
 }
 
+/** 1 January of the satellite's first year to 1 January after its last. */
+function missionBounds(sat: Satellite): Range {
+  return [Date.UTC(sat.years[0], 0, 1), Date.UTC(sat.years[sat.years.length - 1] + 1, 0, 1)];
+}
+
+/** Keeps a window inside the mission, between MIN_SPAN and the whole mission long. */
+function clampRange([t0, t1]: Range, [first, last]: Range): Range {
+  const span = Math.min(Math.max(t1 - t0, MIN_SPAN), last - first);
+  let a = t0, b = t0 + span;
+  if (a < first) { a = first; b = first + span; }
+  if (b > last) { b = last; a = last - span; }
+  return [Math.round(a), Math.round(b)];
+}
+
+/** Window ``factor`` times as long, keeping the time at fraction ``f`` of it in place. */
+function zoomRange(r: Range, f: number, factor: number, bounds: Range): Range {
+  const span = Math.min(Math.max((r[1] - r[0]) * factor, MIN_SPAN), bounds[1] - bounds[0]);
+  const t = r[0] + f * (r[1] - r[0]);
+  return clampRange([t - f * span, t - f * span + span], bounds);
+}
+
 /** Symmetric axis span covering the bulk of the values (transient spikes are clipped). */
 function niceSpan(values: number[]): number {
   const sorted = [...values].sort((p, q) => p - q);
@@ -145,7 +166,13 @@ function useRangeData(sat: Satellite, [t0, t1]: Range) {
     });
   }, [eventsReady, eventStamp, t0, t1]);
 
-  return { series: merged, events, error: seriesQs.some((q) => q.isError), years };
+  // While a newly reached year loads (zooming out, panning), keep the last data on screen.
+  const lastSeries = useRef<Merged | null>(null);
+  const lastEvents = useRef<EventSummary[] | null>(null);
+  if (merged) lastSeries.current = merged;
+  if (events) lastEvents.current = events;
+  return { series: merged ?? lastSeries.current, events: events ?? lastEvents.current,
+           error: seriesQs.some((q) => q.isError), years };
 }
 
 // --------------------------------------------------------------------------- charts
@@ -156,16 +183,126 @@ interface ChartProps {
   events: EventSummary[];
   selected: string | null;
   onSelect: (id: string) => void;
-  animate: string;
-  /** wipe: draw from left to right (arrival, year change); fade: after a drag. */
-  entrance: Entrance;
+  bounds: Range;
+  onDraft: (r: Range | null) => void;
+  onCommit: (r: Range) => void;
 }
 
-type Entrance = "wipe" | "fade";
-const ENTRANCE_CLASS: Record<Entrance, string> = { wipe: "wipe-in", fade: "fade-in" };
+/**
+ * Time navigation on the series chart. Mouse: the wheel zooms around the pointer and a
+ * drag pans (a horizontal trackpad swipe pans too). Touch: pinch zooms and a horizontal
+ * one-finger drag pans, while vertical swipes still scroll the page (touch-action:
+ * pan-y). A drag starts only after a few pixels, so taps on markers still select them.
+ * The window is a draft during the gesture and committed when it ends.
+ */
+function useTimeGestures(range: Range, bounds: Range, onDraft: (r: Range | null) => void,
+                         onCommit: (r: Range) => void) {
+  const ref = useRef<HTMLDivElement>(null);
+  const shown = useRef(range);
+  shown.current = range;
+  const callbacks = useRef({ onDraft, onCommit });
+  callbacks.current = { onDraft, onCommit };
+  const pointers = useRef(new Map<number, number>());
+  const gesture = useRef<{ start: Range; x0: number; d0: number; f0: number; active: boolean } | null>(null);
+  const draft = useRef<Range | null>(null);
+  const [lo, hi] = bounds;
 
-function SeriesChart({ range, series, events, selected, onSelect, animate, entrance }: ChartProps) {
+  const frac = (clientX: number) => {
+    const box = ref.current!.getBoundingClientRect();
+    return Math.min(Math.max((clientX - box.left) / box.width, 0), 1);
+  };
+  const update = (r: Range) => { draft.current = r; callbacks.current.onDraft(r); };
+  const finish = () => {
+    if (draft.current) callbacks.current.onCommit(draft.current);
+    draft.current = null;
+    callbacks.current.onDraft(null);
+  };
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    let timer = 0;
+    // Registered by hand: React's wheel listeners are passive and cannot stop the page.
+    const onWheel = (e: WheelEvent) => {
+      const r = draft.current ?? shown.current;
+      const span = r[1] - r[0];
+      const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
+      const dx = e.deltaX * unit, dy = e.deltaY * unit;
+      const shift = (dx / el.clientWidth) * span;
+      const next = Math.abs(dx) > Math.abs(dy)
+        ? clampRange([r[0] + shift, r[1] + shift], [lo, hi])
+        : zoomRange(r, frac(e.clientX), Math.exp(dy * 0.0015), [lo, hi]);
+      if (next[0] === r[0] && next[1] === r[1]) return; // at a limit: the page scrolls
+      e.preventDefault();
+      update(next);
+      clearTimeout(timer);
+      timer = window.setTimeout(finish, 350);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      clearTimeout(timer);
+    };
+  }, [lo, hi]);
+
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    pointers.current.set(e.pointerId, e.clientX);
+    const start = draft.current ?? shown.current;
+    if (pointers.current.size === 2) {
+      const [a, b] = [...pointers.current.values()];
+      gesture.current = { start, x0: 0, d0: Math.max(Math.abs(a - b), 1), f0: frac((a + b) / 2),
+                          active: true };
+      for (const id of pointers.current.keys()) e.currentTarget.setPointerCapture(id);
+    } else if (pointers.current.size === 1) {
+      gesture.current = { start, x0: e.clientX, d0: 0, f0: 0, active: false };
+    }
+  };
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const g = gesture.current;
+    if (!g || !pointers.current.has(e.pointerId)) return;
+    pointers.current.set(e.pointerId, e.clientX);
+    const span = g.start[1] - g.start[0];
+    if (pointers.current.size >= 2) {
+      const [a, b] = [...pointers.current.values()];
+      const factor = g.d0 / Math.max(Math.abs(a - b), 1);
+      const newSpan = Math.min(Math.max(span * factor, MIN_SPAN), hi - lo);
+      const t = g.start[0] + g.f0 * span; // the time under the fingers stays under them
+      const t0 = t - frac((a + b) / 2) * newSpan;
+      update(clampRange([t0, t0 + newSpan], [lo, hi]));
+      return;
+    }
+    const dx = e.clientX - g.x0;
+    if (!g.active) {
+      if (Math.abs(dx) < 4) return;
+      g.active = true;
+      e.currentTarget.setPointerCapture(e.pointerId);
+      e.currentTarget.classList.add("dragging");
+    }
+    const dt = -(dx / e.currentTarget.clientWidth) * span;
+    update(clampRange([g.start[0] + dt, g.start[1] + dt], [lo, hi]));
+  };
+  const onPointerEnd = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!pointers.current.delete(e.pointerId)) return;
+    if (pointers.current.size === 1 && gesture.current?.d0) {
+      // From pinch to pan: carry on from the current window with the remaining finger.
+      const [x0] = [...pointers.current.values()];
+      gesture.current = { start: draft.current ?? shown.current, x0, d0: 0, f0: 0, active: true };
+      return;
+    }
+    if (pointers.current.size === 0) {
+      e.currentTarget.classList.remove("dragging");
+      if (gesture.current?.active) finish();
+      gesture.current = null;
+    }
+  };
+  return { ref, handlers: { onPointerDown, onPointerMove, onPointerUp: onPointerEnd,
+                            onPointerCancel: onPointerEnd } };
+}
+
+function SeriesChart({ range, series, events, selected, onSelect, bounds, onDraft, onCommit }: ChartProps) {
   const x = scaleLinear().domain(range).range([0, W]);
+  const gestures = useTimeGestures(range, bounds, onDraft, onCommit);
   // Sorting and downsampling depend on the data only, not on the selected marker.
   const { rel, span, reduced } = useMemo(() => {
     const valid = series.a.filter((v): v is number => v !== null);
@@ -192,7 +329,7 @@ function SeriesChart({ range, series, events, selected, onSelect, animate, entra
 
   return (
     <div className="chart-stack" style={{ gap: 14 }}>
-      <div className={`chart-frame ${ENTRANCE_CLASS[entrance]}`} key={animate}>
+      <div className="chart-frame wipe-in interactive" ref={gestures.ref} {...gestures.handlers}>
         <svg viewBox={`0 0 ${W} ${H}`} role="img"
              aria-label={`Demi-grand axe moyen par révolution, ${rangeLabel(range)}`}>
           <defs><clipPath id="plot-area"><rect x="0" y="0" width={W} height={H} /></clipPath></defs>
@@ -266,8 +403,7 @@ function OverviewStrip({ sat, range, onDraft, onCommit }: OverviewProps) {
   const ref = useRef<HTMLDivElement>(null);
   const drag = useRef<{ mode: DragMode; start: Range; t: number } | null>(null);
   const draft = useRef<Range | null>(null);
-  const first = Date.UTC(sat.years[0], 0, 1);
-  const last = Date.UTC(sat.years[sat.years.length - 1] + 1, 0, 1);
+  const [first, last] = missionBounds(sat);
   const x = scaleLinear().domain([first, last]).range([0, W]);
   const path = useMemo(() => {
     if (!data) return "";
@@ -281,13 +417,7 @@ function OverviewStrip({ sat, range, onDraft, onCommit }: OverviewProps) {
     return line<number>().x((_, k) => x(reduced.x[k])).y((v) => y(v))(vals) ?? "";
   }, [data, x, sat.operational_start]);
 
-  const clamp = ([t0, t1]: Range): Range => {
-    const span = Math.min(Math.max(t1 - t0, MIN_SPAN), last - first);
-    let a = t0, b = t0 + span;
-    if (a < first) { a = first; b = first + span; }
-    if (b > last) { b = last; a = last - span; }
-    return [Math.round(a), Math.round(b)];
-  };
+  const clamp = (r: Range) => clampRange(r, [first, last]);
   const timeAt = (clientX: number) => {
     const box = ref.current!.getBoundingClientRect();
     return x.invert(((clientX - box.left) / box.width) * W);
@@ -440,10 +570,13 @@ function MissionView({ sat }: { sat: Satellite }) {
     return yearRange(Number(params.get("annee")) || defaultYear);
   }, [params, defaultYear]);
   const [draft, setDraft] = useState<Range | null>(null);
-  const [entrance, setEntrance] = useState<Entrance>("wipe");
+  // Bumped by discrete changes (year buttons) to replay the charts' entrance; gestures
+  // and the overview strip move the window without it.
+  const [chartKey, setChartKey] = useState(0);
+  const bounds = useMemo(() => missionBounds(sat), [sat]);
   const range = draft ?? committed;
-  const commit = (r: Range, how: Entrance = "wipe") => {
-    setEntrance(how);
+  const commit = (r: Range, replay = true) => {
+    if (replay) setChartKey((k) => k + 1);
     const y = exactYear(r);
     setParams(y !== null ? { annee: String(y) } : { debut: isoDay(r[0]), fin: isoDay(r[1]) },
               { replace: true });
@@ -520,8 +653,10 @@ function MissionView({ sat }: { sat: Satellite }) {
 
       <div className="mission-body">
         <div className="chart-stack">
-          <div className="label" style={{ display: "flex", justifyContent: "space-between" }}>
+          <div className="label" style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
             <span>{rangeLabel(range)}</span>
+            <span className="faint hint-mouse">molette : zoom · glisser : se déplacer</span>
+            <span className="faint hint-touch">pincer : zoom · glisser : se déplacer</span>
             {year === null && (
               <button className="link-button" onClick={() => commit(yearRange(new Date(range[0]).getUTCFullYear()))}>
                 Revenir à l’année
@@ -529,9 +664,9 @@ function MissionView({ sat }: { sat: Satellite }) {
             )}
           </div>
           {series && events ? (
-            <SeriesChart range={range} series={series} events={shown} selected={selected}
-                         onSelect={setSelected} animate={`${committed[0]}-${committed[1]}`}
-                         entrance={entrance} />
+            <SeriesChart key={chartKey} range={range} series={series} events={shown}
+                         selected={selected} onSelect={setSelected} bounds={bounds}
+                         onDraft={setDraft} onCommit={(r) => commit(r, false)} />
           ) : error ? (
             <ErrorNote>Série indisponible pour cette période.</ErrorNote>
           ) : (
@@ -540,7 +675,7 @@ function MissionView({ sat }: { sat: Satellite }) {
           <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
             <span className="label">Activité solaire · F10.7</span>
             {series && (
-              <div key={`${committed[0]}-${committed[1]}`} className={ENTRANCE_CLASS[entrance]}>
+              <div key={chartKey} className="wipe-in">
                 <SolarBand range={range} series={series} />
               </div>
             )}
@@ -551,7 +686,7 @@ function MissionView({ sat }: { sat: Satellite }) {
               fenêtre pour se déplacer, tirer ses bords pour zoomer
             </span>
             <OverviewStrip sat={sat} range={range} onDraft={setDraft}
-                           onCommit={(r) => commit(r, "fade")} />
+                           onCommit={(r) => commit(r, false)} />
           </Reveal>
           {range[0] < opsStart && (
             <p className="faint" style={{ fontSize: 12, margin: 0 }}>
